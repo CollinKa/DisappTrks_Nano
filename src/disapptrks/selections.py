@@ -2,7 +2,172 @@
 
 from __future__ import annotations
 
+import os
+from functools import lru_cache
+from pathlib import Path
+
 import numpy as np
+
+
+MET_TRIGGER_FIELDS = (
+    "MET105_IsoTrk50",
+    "MET120_IsoTrk50",
+    "PFMET105_IsoTrk50",
+    "PFMET120_PFMHT120_IDTight",
+    "PFMET130_PFMHT130_IDTight",
+    "PFMET140_PFMHT140_IDTight",
+    "PFMETNoMu120_PFMHTNoMu120_IDTight",
+    "PFMETNoMu130_PFMHTNoMu130_IDTight",
+    "PFMETNoMu140_PFMHTNoMu140_IDTight",
+    "PFMETNoMu120_PFMHTNoMu120_IDTight_PFHT60",
+    "PFMETNoMu110_PFMHTNoMu110_IDTight_FilterHF",
+    "PFMETNoMu120_PFMHTNoMu120_IDTight_FilterHF",
+    "PFMETNoMu130_PFMHTNoMu130_IDTight_FilterHF",
+    "PFMETNoMu140_PFMHTNoMu140_IDTight_FilterHF",
+    "PFMET120_PFMHT120_IDTight_PFHT60",
+    "PFMETTypeOne120_PFMHT120_IDTight",
+    "PFMETTypeOne130_PFMHT130_IDTight",
+    "PFMETTypeOne140_PFMHT140_IDTight",
+    "PFMETTypeOne120_PFMHT120_IDTight_PFHT60",
+)
+
+SIGNAL_MET_FILTER_FIELDS = (
+    "HBHENoiseFilter",
+    "HBHENoiseIsoFilter",
+    "globalSuperTightHalo2016Filter",
+    "HcalStripHaloFilter",
+    "EcalDeadCellTriggerPrimitiveFilter",
+    "BadPFMuonFilter",
+    "BadPFMuonDzFilter",
+    "hfNoisyHitsFilter",
+    "eeBadScFilter",
+)
+
+DEFAULT_FIDUCIAL_MAP_DIR = Path(
+    "/uscms_data/d3/czheng/CMSSW_15_0_10/src/OSUT3Analysis/Configuration/data"
+)
+
+
+def _event_bool_like(events, value: bool):
+    import awkward as ak
+
+    for field in ("event", "run", "luminosityBlock"):
+        if field in events.fields:
+            template = events[field]
+            return ak.ones_like(template, dtype=bool) if value else ak.zeros_like(template, dtype=bool)
+    if "HLT" in events.fields and len(events.HLT.fields) > 0:
+        template = events.HLT[events.HLT.fields[0]]
+        return ak.ones_like(template, dtype=bool) if value else ak.zeros_like(template, dtype=bool)
+    raise ValueError("cannot build an event-shaped boolean mask")
+
+
+def _branch_mask(events, collection: str, field: str, *, default: bool = True):
+    if collection in events.fields and field in events[collection].fields:
+        return events[collection][field]
+    flat_name = f"{collection}_{field}"
+    if flat_name in events.fields:
+        return events[flat_name]
+    return _event_bool_like(events, default)
+
+
+def _hlt_or_mask(events, fields=MET_TRIGGER_FIELDS):
+    mask = _event_bool_like(events, False)
+    for field in fields:
+        if "HLT" in events.fields and field in events.HLT.fields:
+            mask = mask | events.HLT[field]
+        elif f"HLT_{field}" in events.fields:
+            mask = mask | events[f"HLT_{field}"]
+    return mask
+
+
+def _signal_met_filters_mask(events):
+    mask = _event_bool_like(events, True)
+    found = False
+    for field in SIGNAL_MET_FILTER_FIELDS:
+        in_collection = "Flag" in events.fields and field in events.Flag.fields
+        flat_name = f"Flag_{field}"
+        if in_collection or flat_name in events.fields:
+            mask = mask & _branch_mask(events, "Flag", field)
+            found = True
+    if found:
+        return mask
+    return _branch_mask(events, "Flag", "METFilters")
+
+
+def _ecal_bad_calib_filter_mask(events):
+    return _branch_mask(events, "Flag", "ecalBadCalibFilter")
+
+
+def _good_primary_vertex_mask(events):
+    if "Flag" in events.fields and "goodVertices" in events.Flag.fields:
+        return events.Flag.goodVertices
+    if "Flag_goodVertices" in events.fields:
+        return events.Flag_goodVertices
+    if "PV" in events.fields and "npvsGood" in events.PV.fields:
+        return events.PV.npvsGood > 0
+    if "PV_npvsGood" in events.fields:
+        return events.PV_npvsGood > 0
+    return _event_bool_like(events, True)
+
+
+def _fiducial_map_path(flavor: str):
+    override = os.environ.get(f"DISAPPTRKS_{flavor.upper()}_FIDUCIAL_MAP")
+    if override:
+        return Path(override)
+    base = Path(os.environ.get("DISAPPTRKS_FIDUCIAL_MAP_DIR", DEFAULT_FIDUCIAL_MAP_DIR))
+    return base / f"{flavor}FiducialMap_mc.root"
+
+
+@lru_cache(maxsize=None)
+def _fiducial_hot_spots(path: str, before_name="beforeVeto", after_name="afterVeto", threshold=2.0):
+    import uproot
+
+    path_obj = Path(path)
+    if not path_obj.exists():
+        return ()
+    with uproot.open(str(path_obj)) as root_file:
+        before, x_edges, y_edges = root_file[before_name].to_numpy()
+        after, after_x_edges, after_y_edges = root_file[after_name].to_numpy()
+
+    if not np.allclose(x_edges, after_x_edges) or not np.allclose(y_edges, after_y_edges):
+        raise ValueError(f"{path}: before/after fiducial histograms have different binning")
+
+    occupied = before > 0.0
+    if not np.any(occupied):
+        return ()
+
+    inefficiency = np.zeros_like(after, dtype=float)
+    inefficiency[occupied] = after[occupied] / before[occupied]
+    mean = float(np.sum(after[occupied]) / np.sum(before[occupied]))
+    n_occupied = int(np.count_nonzero(occupied))
+    if n_occupied < 2:
+        return ()
+    stddev = float(np.sqrt(np.sum((inefficiency[occupied] - mean) ** 2) / (n_occupied - 1)))
+    if stddev == 0.0:
+        return ()
+
+    hot_spots = []
+    for ix, iy in np.argwhere(occupied):
+        excess = inefficiency[ix, iy] - mean
+        if excess <= float(threshold) * stddev:
+            continue
+        eta = float(0.5 * (x_edges[ix] + x_edges[ix + 1]))
+        phi = float(0.5 * (y_edges[iy] + y_edges[iy + 1]))
+        radius = float(np.hypot(0.5 * (x_edges[ix + 1] - x_edges[ix]), 0.5 * (y_edges[iy + 1] - y_edges[iy])))
+        hot_spots.append((eta, phi, radius))
+    return tuple(hot_spots)
+
+
+def _fiducial_map_mask(tracks, path, *, min_delta_r=0.05):
+    import awkward as ak
+
+    mask = ak.ones_like(tracks.eta, dtype=bool)
+    if path is None:
+        return mask
+    for eta, phi, radius in _fiducial_hot_spots(str(path)):
+        dr = np.sqrt((tracks.eta - eta) ** 2 + delta_phi(tracks.phi, phi) ** 2)
+        mask = mask & (dr >= max(float(min_delta_r), radius))
+    return mask
 
 
 def delta_phi(phi1, phi2):
@@ -299,6 +464,18 @@ def add_isotrack_derived_fields(events):
         ~tracks.passesTOBDzOrLambda,
         "inTOBCrack",
     )
+    if "isFiducialElectronTrack" not in tracks.fields:
+        tracks = ak.with_field(
+            tracks,
+            _fiducial_map_mask(tracks, _fiducial_map_path("electron")),
+            "isFiducialElectronTrack",
+        )
+    if "isFiducialMuonTrack" not in tracks.fields:
+        tracks = ak.with_field(
+            tracks,
+            _fiducial_map_mask(tracks, _fiducial_map_path("muon")),
+            "isFiducialMuonTrack",
+        )
     raw_calo_energy = tracks.caloEm + tracks.caloHad
     if "caloTotNoPU" in tracks.fields:
         calo_energy = tracks.caloTotNoPU
@@ -352,6 +529,8 @@ def base_probe_track_mask(
     apply_jet_cut: bool = True,
     apply_calo_cut: bool = True,
     apply_outer_hits_cut: bool = False,
+    apply_electron_fiducial_map: bool = False,
+    apply_muon_fiducial_map: bool = False,
 ):
     mask = (
         (tracks.pt > pt_min)
@@ -370,6 +549,10 @@ def base_probe_track_mask(
         & (abs(tracks.dz) < 0.5)
         & layer_mask(tracks, layer)
     )
+    if apply_electron_fiducial_map:
+        mask = mask & tracks.isFiducialElectronTrack
+    if apply_muon_fiducial_map:
+        mask = mask & tracks.isFiducialMuonTrack
     if apply_jet_cut:
         mask = mask & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
     if apply_calo_cut:
@@ -799,6 +982,8 @@ def search_track_mask(tracks, *, layer: str = "combinedBins"):
         layer=layer,
         apply_calo_cut=True,
         apply_outer_hits_cut=True,
+        apply_electron_fiducial_map=True,
+        apply_muon_fiducial_map=True,
     ) & (
         ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
         & ((tracks.dRMinMuon < 0.0) | (tracks.dRMinMuon > 0.15))
@@ -880,6 +1065,12 @@ def search_track_cutflow_masks(tracks, *, layer: str = "combinedBins"):
     mask = mask & tracks.isFiducialECALTrack
     masks["track_fiducialECAL"] = mask
 
+    mask = mask & tracks.isFiducialElectronTrack
+    masks["track_fiducialElectron"] = mask
+
+    mask = mask & tracks.isFiducialMuonTrack
+    masks["track_fiducialMuon"] = mask
+
     mask = mask & (tracks.hp_nValidPixelHits >= 4)
     masks["track_pixelHits4"] = mask
 
@@ -904,7 +1095,12 @@ def search_track_cutflow_masks(tracks, *, layer: str = "combinedBins"):
     mask = mask & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
     masks["track_dRJet0p5"] = mask
 
-    mask = mask & layer_mask(tracks, layer)
+    pre_layer_mask = mask
+    masks["track_layers4"] = pre_layer_mask & layer_mask(tracks, "NLayers4")
+    masks["track_layers5"] = pre_layer_mask & layer_mask(tracks, "NLayers5")
+    masks["track_layers6plus"] = pre_layer_mask & layer_mask(tracks, "NLayers6plus")
+
+    mask = pre_layer_mask & layer_mask(tracks, layer)
     masks["track_layers4plus"] = mask
 
     mask = mask & (tracks.caloEnergy < 10.0)
@@ -936,11 +1132,29 @@ def search_event_cutflow_masks(
     """Return cumulative event masks for debugging the search event selection."""
     masks = {}
 
-    mask = analysis_event.METNoMu_pt >= met_min
+    mask = analysis_event.passesMETTrigger
+    masks["event_metTrigger"] = mask
+
+    mask = mask & analysis_event.passesSignalMETFilters
+    masks["event_metFilters"] = mask
+
+    mask = mask & analysis_event.passEcalBadCalibFilterUpdate
+    masks["event_passEcalBadCalibFilterUpdate"] = mask
+
+    mask = mask & analysis_event.hasGoodPV
+    masks["event_goodPV"] = mask
+
+    mask = mask & (analysis_event.METNoMu_pt >= met_min)
     masks["event_metNoMu120"] = mask
 
-    mask = mask & (analysis_event.leadingJet_pt > jet_pt_min)
+    mask = mask & analysis_event.hasJetPt110
     masks["event_leadingJet110"] = mask
+
+    mask = mask & analysis_event.hasJetPt110Eta2p4
+    masks["event_leadingJetEta2p4"] = mask
+
+    mask = mask & analysis_event.hasJetPt110Eta2p4TightLepVeto
+    masks["event_leadingJetTightLepVeto"] = mask
 
     mask = mask & (analysis_event.leadingJetMETNoMuDeltaPhi >= jet_met_dphi_min)
     masks["event_jetMetDphi0p5"] = mask
@@ -958,11 +1172,17 @@ def add_event_derived_fields(events):
     """Build no-muon-MET/jet angular quantities without a custom event table."""
     import awkward as ak
 
-    good = (
-        (events.Jet.pt > 30.0)
-        & (abs(events.Jet.eta) < 4.5)
-        & run3_tight_lepton_veto_jet_mask(events.Jet)
+    jet_tight_lep_veto = run3_tight_lepton_veto_jet_mask(events.Jet)
+    has_jet_pt110 = ak.any(events.Jet.pt > 110.0, axis=1)
+    has_jet_pt110_eta2p4 = ak.any(
+        (events.Jet.pt > 110.0) & (abs(events.Jet.eta) < 2.4), axis=1
     )
+    has_jet_pt110_eta2p4_tight = ak.any(
+        (events.Jet.pt > 110.0) & (abs(events.Jet.eta) < 2.4) & jet_tight_lep_veto,
+        axis=1,
+    )
+
+    good = (events.Jet.pt > 30.0) & (abs(events.Jet.eta) < 2.4) & jet_tight_lep_veto
     jets = events.Jet[good]
     order = ak.argsort(jets.pt, ascending=False)
     jets = jets[order]
@@ -977,6 +1197,13 @@ def add_event_derived_fields(events):
         {
             "METNoMu_pt": events.MetNoMu.pt,
             "METNoMu_phi": events.MetNoMu.phi,
+            "passesMETTrigger": _hlt_or_mask(events),
+            "passesSignalMETFilters": _signal_met_filters_mask(events),
+            "passEcalBadCalibFilterUpdate": _ecal_bad_calib_filter_mask(events),
+            "hasGoodPV": _good_primary_vertex_mask(events),
+            "hasJetPt110": has_jet_pt110,
+            "hasJetPt110Eta2p4": has_jet_pt110_eta2p4,
+            "hasJetPt110Eta2p4TightLepVeto": has_jet_pt110_eta2p4_tight,
             "leadingJet_pt": leading_pt,
             "leadingJet_phi": leading_phi,
             "dijetMaxDeltaPhi": dijet_max,
