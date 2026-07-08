@@ -40,6 +40,7 @@ from disapptrks.selections import (
     os_mass_window_pair_mask,
     os_z_window_muon_probe_pair_mask,
     search_event_cutflow_masks,
+    search_figure17_track_cutflow_masks,
     search_track_cutflow_masks,
     search_track_mask,
     single_electron_trigger_mask,
@@ -1167,7 +1168,7 @@ class DisappTrksProcessor(BaseProcessorABC):
 
         track_diagnostics = {}
         diagnostics = {}
-        for name, mask in search_track_cutflow_masks(self.events.IsoTrack).items():
+        for name, mask in search_figure17_track_cutflow_masks(self.events.IsoTrack).items():
             n_name = f"n{name[0].upper()}{name[1:]}"
             self.events[n_name] = ak.num(self.events.IsoTrack[mask])
             track_diagnostics[name] = self.events[n_name] >= 1
@@ -1176,9 +1177,24 @@ class DisappTrksProcessor(BaseProcessorABC):
 
         event_diagnostics = search_event_cutflow_masks(self.events.AnalysisEvent)
         diagnostics.update(event_diagnostics)
-        event_search_kinematics = event_diagnostics["event_dijetDphi2p5"]
+        event_search_kinematics = event_diagnostics["event_jetMetDphi0p5"]
+        jet_veto2022 = _jet_veto_map_mask(
+            self.events,
+            processor_params=self.params,
+            year=self._year,
+            era=self._era,
+            sample=self._sample,
+            is_mc=self._isMC,
+        )
+        include_jet_veto = False
         for name, mask in track_diagnostics.items():
-            diagnostics[f"eventKinematics_{name}"] = event_search_kinematics & mask
+            combined_mask = event_search_kinematics & mask
+            if include_jet_veto:
+                combined_mask = combined_mask & jet_veto2022
+            diagnostics[f"eventKinematics_{name}"] = combined_mask
+            if name == "track_dRJet0p5":
+                diagnostics["eventKinematics_track_jetVeto2022"] = combined_mask & jet_veto2022
+                include_jet_veto = True
         self.events["SearchDiag"] = ak.zip(diagnostics)
 
     def define_common_variables_before_presel(self, variation):

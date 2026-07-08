@@ -22,20 +22,20 @@ EVENT_DIAGNOSTIC_FIELDS = [
     "event_leadingJet110",
     "event_leadingJetEta2p4",
     "event_leadingJetTightLepVeto",
-    "event_jetMetDphi0p5",
     "event_dijetDphi2p5",
+    "event_jetMetDphi0p5",
 ]
 
 TRACK_DIAGNOSTIC_FIELDS = [
-    "track_pt55",
     "track_eta2p1",
+    "track_pt55",
     "track_noECALCrack",
     "track_noDTWheelGap",
     "track_noCSCTransition",
     "track_noTOBCrack",
-    "track_fiducialECAL",
     "track_fiducialElectron",
     "track_fiducialMuon",
+    "track_fiducialECAL",
     "track_pixelHits4",
     "track_validHits4",
     "track_noMissingInner",
@@ -44,20 +44,21 @@ TRACK_DIAGNOSTIC_FIELDS = [
     "track_dxy0p02",
     "track_dz0p5",
     "track_dRJet0p5",
-    "track_layers4",
-    "track_layers5",
-    "track_layers6plus",
-    "track_layers4plus",
-    "track_calo10",
-    "track_missingOuter3",
     "track_electronVeto",
     "track_muonVeto",
     "track_tauVeto",
+    "track_calo10",
+    "track_missingOuter3",
+    "track_layers6plus",
 ]
 
 COMBINED_DIAGNOSTIC_FIELDS = [
     f"eventKinematics_{field}" for field in TRACK_DIAGNOSTIC_FIELDS
 ]
+COMBINED_DIAGNOSTIC_FIELDS.insert(
+    COMBINED_DIAGNOSTIC_FIELDS.index("eventKinematics_track_electronVeto"),
+    "eventKinematics_track_jetVeto2022",
+)
 
 SEARCH_DIAGNOSTIC_FIELDS = (
     EVENT_DIAGNOSTIC_FIELDS + TRACK_DIAGNOSTIC_FIELDS + COMBINED_DIAGNOSTIC_FIELDS

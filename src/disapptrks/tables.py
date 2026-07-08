@@ -113,129 +113,107 @@ MUON_CUTFLOW_ROWS = [
     ),
 ]
 
-SIGNAL_SEARCH_PARALLEL_CUTFLOW_ROWS = {
-    "diag_eventKinematics_track_layers4",
-    "diag_eventKinematics_track_layers5",
-    "diag_eventKinematics_track_layers6plus",
-}
+SIGNAL_SEARCH_PARALLEL_CUTFLOW_ROWS = set()
 
 
 SIGNAL_SEARCH_CUTFLOW_ROWS = [
-    ("initial", r"raw events before configured preselections"),
-    ("inclusive", r"events entering signal-search diagnostics"),
-    ("diag_event_metTrigger", r"event passes the MET-trigger OR"),
-    ("diag_event_metFilters", r"event passes MET filters excluding the ECAL bad-calib row"),
+    ("initial", r"total"),
+    ("diag_event_metTrigger", r"trigger"),
+    ("diag_event_metFilters", r"MET filter"),
     (
         "diag_event_passEcalBadCalibFilterUpdate",
-        r"event passes the ECAL bad-calibration filter update",
+        r">= 1 mets with passecalBadCalibFilterUpdate",
     ),
-    ("diag_event_goodPV", r"event has a good primary vertex"),
-    ("diag_event_metNoMu120", r"$p_T^{\mathrm{miss,no-\mu}} \geq 120~\mathrm{GeV}$"),
-    ("diag_event_leadingJet110", r"$\geq 1$ jet with $p_T > 110~\mathrm{GeV}$"),
-    ("diag_event_leadingJetEta2p4", r"$\geq 1$ jet with $p_T > 110~\mathrm{GeV}$ and $|\eta| < 2.4$"),
+    ("diag_event_goodPV", r">= 1 good primary vertices"),
+    ("diag_event_metNoMu120", r">= 1 mets with noMuPt > 120"),
+    ("diag_event_leadingJet110", r">= 1 jets with smearedPt > 110"),
+    ("diag_event_leadingJetEta2p4", r">= 1 jets with fabs ( eta ) < 2.4"),
     (
         "diag_event_leadingJetTightLepVeto",
-        r"$\geq 1$ jet with $p_T > 110~\mathrm{GeV}$, $|\eta| < 2.4$, and TightLepVeto ID",
+        r">= 1 jet passing TightLepVeto ID",
     ),
-    (
-        "diag_event_jetMetDphi0p5",
-        r"$\Delta\phi(p_T^{\mathrm{miss,no-\mu}},\mathrm{jet}) \geq 0.5$",
-    ),
-    ("diag_event_dijetDphi2p5", r"veto dijet pairs with $\Delta\phi > 2.5$"),
-    (
-        "diag_eventKinematics_track_pt55",
-        r"$\geq 1$ track $p_T > 55~\mathrm{GeV}$",
-    ),
-    ("diag_eventKinematics_track_eta2p1", r"$\geq 1$ track $|\eta| < 2.1$"),
+    ("diag_event_dijetDphi2p5", r"veto pairs of jets with DeltaPhi > 2.5"),
+    ("diag_event_jetMetDphi0p5", r"DeltaPhi(ETmiss, jet) > 0.5"),
+    ("diag_eventKinematics_track_eta2p1", r">= 1 tracks with fabs ( eta ) < 2.1"),
+    ("diag_eventKinematics_track_pt55", r">= 1 tracks with pt > 55"),
     (
         "diag_eventKinematics_track_noECALCrack",
-        r"$\geq 1$ track outside the ECAL barrel-endcap gap",
+        r">= 1 tracks with fabs ( eta ) < 1.42 || fabs ( eta ) > 1.65",
     ),
     (
         "diag_eventKinematics_track_noDTWheelGap",
-        r"$\geq 1$ track outside the DT wheel gap",
+        r">= 1 tracks with fabs ( eta ) < 0.15 || fabs ( eta ) > 0.35",
     ),
     (
         "diag_eventKinematics_track_noCSCTransition",
-        r"$\geq 1$ track outside the CSC transition region",
+        r">= 1 tracks with fabs ( eta ) < 1.55 || fabs ( eta ) > 1.85",
     ),
-    ("diag_eventKinematics_track_noTOBCrack", r"$\geq 1$ track outside the TOB crack"),
-    (
-        "diag_eventKinematics_track_fiducialECAL",
-        r"$\geq 1$ track passing the ECAL fiducial veto",
-    ),
+    ("diag_eventKinematics_track_noTOBCrack", r">= 1 tracks with !inTOBCrack"),
     (
         "diag_eventKinematics_track_fiducialElectron",
-        r"$\geq 1$ track passing the electron fiducial map",
+        r">= 1 tracks with isFiducialElectronTrack",
     ),
     (
         "diag_eventKinematics_track_fiducialMuon",
-        r"$\geq 1$ track passing the muon fiducial map",
+        r">= 1 tracks with isFiducialMuonTrack",
+    ),
+    (
+        "diag_eventKinematics_track_fiducialECAL",
+        r">= 1 tracks with isFiducialECALTrack",
     ),
     (
         "diag_eventKinematics_track_pixelHits4",
-        r"$\geq 1$ track with $\geq 4$ valid pixel hits",
+        r">= 1 tracks with hitPattern_.numberOfValidPixelHits >= 4",
     ),
     (
         "diag_eventKinematics_track_validHits4",
-        r"$\geq 1$ track with $\geq 4$ valid tracker hits",
+        r">= 1 tracks with hitPattern_.numberOfValidHits >= 4",
     ),
     (
         "diag_eventKinematics_track_noMissingInner",
-        r"$\geq 1$ track with no missing inner hits",
+        r">= 1 tracks with missingInnerHits == 0",
     ),
     (
         "diag_eventKinematics_track_noMissingMiddle",
-        r"$\geq 1$ track with no missing middle hits",
+        r">= 1 tracks with hitDrop_missingMiddleHits == 0",
     ),
     (
         "diag_eventKinematics_track_chargedIso0p05",
-        r"$\geq 1$ track with relative charged isolation $<0.05$",
+        r">= 1 tracks with (pfIsolationDR03_.chargedHadronIso / pt) < 0.05",
     ),
-    ("diag_eventKinematics_track_dxy0p02", r"$\geq 1$ track $|d_{xy}| < 0.02~\mathrm{cm}$"),
-    ("diag_eventKinematics_track_dz0p5", r"$\geq 1$ track $|d_z| < 0.5~\mathrm{cm}$"),
+    ("diag_eventKinematics_track_dxy0p02", r">= 1 tracks with |d0| < 0.02"),
+    ("diag_eventKinematics_track_dz0p5", r">= 1 tracks with |dz| < 0.5"),
+    ("diag_eventKinematics_track_dRJet0p5", r">= 1 tracks with dRMinJet > 0.5"),
     (
-        "diag_eventKinematics_track_dRJet0p5",
-        r"$\geq 1$ track with $\Delta R(\mathrm{track},\mathrm{jet}) > 0.5$",
-    ),
-    (
-        "diag_eventKinematics_track_layers4plus",
-        r"$\geq 1$ track with tracker layers with measurement $\geq 4$",
-    ),
-    (
-        "diag_eventKinematics_track_layers4",
-        r"$\geq 1$ track with tracker layers with measurement $=4$",
-    ),
-    (
-        "diag_eventKinematics_track_layers5",
-        r"$\geq 1$ track with tracker layers with measurement $=5$",
-    ),
-    (
-        "diag_eventKinematics_track_layers6plus",
-        r"$\geq 1$ track with tracker layers with measurement $\geq 6$",
-    ),
-    (
-        "diag_eventKinematics_track_calo10",
-        r"$\geq 1$ track with calorimeter energy $<10~\mathrm{GeV}$",
-    ),
-    (
-        "diag_eventKinematics_track_missingOuter3",
-        r"$\geq 1$ track with missing outer hits $\geq 3$",
+        "diag_eventKinematics_track_jetVeto2022",
+        r">= 1 eventvariables with jetVeto2022 == 1",
     ),
     (
         "diag_eventKinematics_track_electronVeto",
-        r"$\geq 1$ track passing the electron veto",
+        r">= 1 tracks with deltaRToClosestElectron > 0.15",
     ),
     (
         "diag_eventKinematics_track_muonVeto",
-        r"$\geq 1$ track passing the muon veto",
+        r">= 1 tracks with deltaRToClosestMuon > 0.15",
     ),
     (
         "diag_eventKinematics_track_tauVeto",
-        r"$\geq 1$ track passing the hadronic tau veto",
+        r">= 1 tracks with deltaRToClosestTauHad > 0.15",
     ),
-    ("search", r"event search kinematics and $\geq 1$ disappearing track"),
+    (
+        "diag_eventKinematics_track_calo10",
+        r">= 1 tracks with (matchedCaloJetEmEnergy + matchedCaloJetHadEnergy) < 10",
+    ),
+    (
+        "diag_eventKinematics_track_missingOuter3",
+        r">= 1 tracks with hitAndTOBDrop_bestTrackMissingOuterHits >= 3",
+    ),
+    (
+        "diag_eventKinematics_track_layers6plus",
+        r">= 1 tracks with hitPattern_.trackerLayersWithMeasurement >= 6",
+    ),
 ]
+
 
 LEPTON_PVETO_CUTFLOW_ROWS = {
     "electron": [

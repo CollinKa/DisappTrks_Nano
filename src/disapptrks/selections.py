@@ -1041,6 +1041,82 @@ def fake_track_no_d0_mask(
     )
 
 
+
+def search_figure17_track_cutflow_masks(tracks, *, layer: str = "NLayers6plus"):
+    """Return cumulative track masks in the exact Figure-17 signal order."""
+    masks = {}
+    mask = abs(tracks.eta) < 2.1
+    masks["track_eta2p1"] = mask
+
+    mask = mask & (tracks.pt > 55.0)
+    masks["track_pt55"] = mask
+
+    mask = mask & ~tracks.inECALCrack
+    masks["track_noECALCrack"] = mask
+
+    mask = mask & ~tracks.inDTWheelGap
+    masks["track_noDTWheelGap"] = mask
+
+    mask = mask & ~tracks.inCSCTransition
+    masks["track_noCSCTransition"] = mask
+
+    mask = mask & ~tracks.inTOBCrack
+    masks["track_noTOBCrack"] = mask
+
+    mask = mask & tracks.isFiducialElectronTrack
+    masks["track_fiducialElectron"] = mask
+
+    mask = mask & tracks.isFiducialMuonTrack
+    masks["track_fiducialMuon"] = mask
+
+    mask = mask & tracks.isFiducialECALTrack
+    masks["track_fiducialECAL"] = mask
+
+    mask = mask & (tracks.hp_nValidPixelHits >= 4)
+    masks["track_pixelHits4"] = mask
+
+    mask = mask & (tracks.hp_nValidHits >= 4)
+    masks["track_validHits4"] = mask
+
+    mask = mask & (tracks.missingInnerHits == 0)
+    masks["track_noMissingInner"] = mask
+
+    mask = mask & (tracks.missingMiddleHits == 0)
+    masks["track_noMissingMiddle"] = mask
+
+    mask = mask & (tracks.pfRelIso03_chg < 0.05)
+    masks["track_chargedIso0p05"] = mask
+
+    mask = mask & (abs(tracks.dxy) < 0.02)
+    masks["track_dxy0p02"] = mask
+
+    mask = mask & (abs(tracks.dz) < 0.5)
+    masks["track_dz0p5"] = mask
+
+    mask = mask & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
+    masks["track_dRJet0p5"] = mask
+
+    mask = mask & ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
+    masks["track_electronVeto"] = mask
+
+    mask = mask & ((tracks.dRMinMuon < 0.0) | (tracks.dRMinMuon > 0.15))
+    masks["track_muonVeto"] = mask
+
+    mask = mask & ((tracks.dRMinTauHad < 0.0) | (tracks.dRMinTauHad > 0.15))
+    masks["track_tauVeto"] = mask
+
+    mask = mask & (tracks.caloEnergy < 10.0)
+    masks["track_calo10"] = mask
+
+    mask = mask & (tracks.missingOuterHits >= 3)
+    masks["track_missingOuter3"] = mask
+
+    mask = mask & layer_mask(tracks, layer)
+    masks["track_layers6plus"] = mask
+
+    return masks
+
+
 def search_track_cutflow_masks(tracks, *, layer: str = "combinedBins"):
     """Return cumulative track masks for debugging the search-track selection."""
     masks = {}
@@ -1156,14 +1232,14 @@ def search_event_cutflow_masks(
     mask = mask & analysis_event.hasJetPt110Eta2p4TightLepVeto
     masks["event_leadingJetTightLepVeto"] = mask
 
-    mask = mask & (analysis_event.leadingJetMETNoMuDeltaPhi >= jet_met_dphi_min)
-    masks["event_jetMetDphi0p5"] = mask
-
     mask = mask & (
         (analysis_event.dijetMaxDeltaPhi < 0.0)
         | (analysis_event.dijetMaxDeltaPhi < dijet_dphi_max)
     )
     masks["event_dijetDphi2p5"] = mask
+
+    mask = mask & (analysis_event.leadingJetMETNoMuDeltaPhi >= jet_met_dphi_min)
+    masks["event_jetMetDphi0p5"] = mask
 
     return masks
 
