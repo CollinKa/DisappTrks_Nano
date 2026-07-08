@@ -113,10 +113,30 @@ MUON_CUTFLOW_ROWS = [
     ),
 ]
 
+SIGNAL_SEARCH_PARALLEL_CUTFLOW_ROWS = {
+    "diag_eventKinematics_track_layers4",
+    "diag_eventKinematics_track_layers5",
+    "diag_eventKinematics_track_layers6plus",
+}
+
+
 SIGNAL_SEARCH_CUTFLOW_ROWS = [
-    ("inclusive", r"events after configured preselections"),
+    ("initial", r"raw events before configured preselections"),
+    ("inclusive", r"events entering signal-search diagnostics"),
+    ("diag_event_metTrigger", r"event passes the MET-trigger OR"),
+    ("diag_event_metFilters", r"event passes MET filters excluding the ECAL bad-calib row"),
+    (
+        "diag_event_passEcalBadCalibFilterUpdate",
+        r"event passes the ECAL bad-calibration filter update",
+    ),
+    ("diag_event_goodPV", r"event has a good primary vertex"),
     ("diag_event_metNoMu120", r"$p_T^{\mathrm{miss,no-\mu}} \geq 120~\mathrm{GeV}$"),
-    ("diag_event_leadingJet110", r"leading selected jet $p_T > 110~\mathrm{GeV}$"),
+    ("diag_event_leadingJet110", r"$\geq 1$ jet with $p_T > 110~\mathrm{GeV}$"),
+    ("diag_event_leadingJetEta2p4", r"$\geq 1$ jet with $p_T > 110~\mathrm{GeV}$ and $|\eta| < 2.4$"),
+    (
+        "diag_event_leadingJetTightLepVeto",
+        r"$\geq 1$ jet with $p_T > 110~\mathrm{GeV}$, $|\eta| < 2.4$, and TightLepVeto ID",
+    ),
     (
         "diag_event_jetMetDphi0p5",
         r"$\Delta\phi(p_T^{\mathrm{miss,no-\mu}},\mathrm{jet}) \geq 0.5$",
@@ -143,6 +163,14 @@ SIGNAL_SEARCH_CUTFLOW_ROWS = [
     (
         "diag_eventKinematics_track_fiducialECAL",
         r"$\geq 1$ track passing the ECAL fiducial veto",
+    ),
+    (
+        "diag_eventKinematics_track_fiducialElectron",
+        r"$\geq 1$ track passing the electron fiducial map",
+    ),
+    (
+        "diag_eventKinematics_track_fiducialMuon",
+        r"$\geq 1$ track passing the muon fiducial map",
     ),
     (
         "diag_eventKinematics_track_pixelHits4",
@@ -172,7 +200,19 @@ SIGNAL_SEARCH_CUTFLOW_ROWS = [
     ),
     (
         "diag_eventKinematics_track_layers4plus",
-        r"$\geq 1$ track with $n_{\mathrm{layers}} \geq 4$",
+        r"$\geq 1$ track with tracker layers with measurement $\geq 4$",
+    ),
+    (
+        "diag_eventKinematics_track_layers4",
+        r"$\geq 1$ track with tracker layers with measurement $=4$",
+    ),
+    (
+        "diag_eventKinematics_track_layers5",
+        r"$\geq 1$ track with tracker layers with measurement $=5$",
+    ),
+    (
+        "diag_eventKinematics_track_layers6plus",
+        r"$\geq 1$ track with tracker layers with measurement $\geq 6$",
     ),
     (
         "diag_eventKinematics_track_calo10",
@@ -660,6 +700,7 @@ def write_signal_search_cutflow_latex(
     path.parent.mkdir(parents=True, exist_ok=True)
     rows = [
         (
+            category,
             label,
             _category_count(
                 cutflow,
@@ -689,7 +730,7 @@ def write_signal_search_cutflow_latex(
 
         first = None
         previous = None
-        for label, value in rows:
+        for category, label, value in rows:
             if first is None:
                 first = value
             eff_prev = value / previous if previous else 1.0
@@ -698,7 +739,8 @@ def write_signal_search_cutflow_latex(
                 f"{label} & {format_count(value)} & "
                 f"{eff_prev:.4f} & {eff_total:.4f} \\\\\n"
             )
-            previous = value
+            if category not in SIGNAL_SEARCH_PARALLEL_CUTFLOW_ROWS:
+                previous = value
 
         out.write(r"\hline" + "\n")
         out.write(r"\end{tabular}" + "\n")
