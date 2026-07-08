@@ -14,8 +14,14 @@ from pocket_coffea.lib.cut_functions import apply_golden_json, get_JetVetoMap_Ma
 
 
 EVENT_DIAGNOSTIC_FIELDS = [
+    "event_metTrigger",
+    "event_metFilters",
+    "event_passEcalBadCalibFilterUpdate",
+    "event_goodPV",
     "event_metNoMu120",
     "event_leadingJet110",
+    "event_leadingJetEta2p4",
+    "event_leadingJetTightLepVeto",
     "event_jetMetDphi0p5",
     "event_dijetDphi2p5",
 ]
@@ -28,6 +34,8 @@ TRACK_DIAGNOSTIC_FIELDS = [
     "track_noCSCTransition",
     "track_noTOBCrack",
     "track_fiducialECAL",
+    "track_fiducialElectron",
+    "track_fiducialMuon",
     "track_pixelHits4",
     "track_validHits4",
     "track_noMissingInner",
@@ -36,6 +44,9 @@ TRACK_DIAGNOSTIC_FIELDS = [
     "track_dxy0p02",
     "track_dz0p5",
     "track_dRJet0p5",
+    "track_layers4",
+    "track_layers5",
+    "track_layers6plus",
     "track_layers4plus",
     "track_calo10",
     "track_missingOuter3",
@@ -512,8 +523,14 @@ def _tau_pveto_diagnostic(events, params, **kwargs):
 def _search_kinematics(events, params, **kwargs):
     event = events.AnalysisEvent
     return (
-        (event.METNoMu_pt >= params["met_min"])
-        & (event.leadingJet_pt > params["jet_pt_min"])
+        event.passesMETTrigger
+        & event.passesSignalMETFilters
+        & event.passEcalBadCalibFilterUpdate
+        & event.hasGoodPV
+        & (event.METNoMu_pt >= params["met_min"])
+        & event.hasJetPt110
+        & event.hasJetPt110Eta2p4
+        & event.hasJetPt110Eta2p4TightLepVeto
         & (event.leadingJetMETNoMuDeltaPhi >= params["jet_met_dphi_min"])
         & ((event.dijetMaxDeltaPhi < 0.0) | (event.dijetMaxDeltaPhi < params["dijet_dphi_max"]))
     )
