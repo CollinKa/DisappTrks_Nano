@@ -113,6 +113,90 @@ MUON_CUTFLOW_ROWS = [
     ),
 ]
 
+SIGNAL_SEARCH_CUTFLOW_ROWS = [
+    ("inclusive", r"events after configured preselections"),
+    ("diag_event_metNoMu120", r"$p_T^{\mathrm{miss,no-\mu}} \geq 120~\mathrm{GeV}$"),
+    ("diag_event_leadingJet110", r"leading selected jet $p_T > 110~\mathrm{GeV}$"),
+    (
+        "diag_event_jetMetDphi0p5",
+        r"$\Delta\phi(p_T^{\mathrm{miss,no-\mu}},\mathrm{jet}) \geq 0.5$",
+    ),
+    ("diag_event_dijetDphi2p5", r"veto dijet pairs with $\Delta\phi > 2.5$"),
+    (
+        "diag_eventKinematics_track_pt55",
+        r"$\geq 1$ track $p_T > 55~\mathrm{GeV}$",
+    ),
+    ("diag_eventKinematics_track_eta2p1", r"$\geq 1$ track $|\eta| < 2.1$"),
+    (
+        "diag_eventKinematics_track_noECALCrack",
+        r"$\geq 1$ track outside the ECAL barrel-endcap gap",
+    ),
+    (
+        "diag_eventKinematics_track_noDTWheelGap",
+        r"$\geq 1$ track outside the DT wheel gap",
+    ),
+    (
+        "diag_eventKinematics_track_noCSCTransition",
+        r"$\geq 1$ track outside the CSC transition region",
+    ),
+    ("diag_eventKinematics_track_noTOBCrack", r"$\geq 1$ track outside the TOB crack"),
+    (
+        "diag_eventKinematics_track_fiducialECAL",
+        r"$\geq 1$ track passing the ECAL fiducial veto",
+    ),
+    (
+        "diag_eventKinematics_track_pixelHits4",
+        r"$\geq 1$ track with $\geq 4$ valid pixel hits",
+    ),
+    (
+        "diag_eventKinematics_track_validHits4",
+        r"$\geq 1$ track with $\geq 4$ valid tracker hits",
+    ),
+    (
+        "diag_eventKinematics_track_noMissingInner",
+        r"$\geq 1$ track with no missing inner hits",
+    ),
+    (
+        "diag_eventKinematics_track_noMissingMiddle",
+        r"$\geq 1$ track with no missing middle hits",
+    ),
+    (
+        "diag_eventKinematics_track_chargedIso0p05",
+        r"$\geq 1$ track with relative charged isolation $<0.05$",
+    ),
+    ("diag_eventKinematics_track_dxy0p02", r"$\geq 1$ track $|d_{xy}| < 0.02~\mathrm{cm}$"),
+    ("diag_eventKinematics_track_dz0p5", r"$\geq 1$ track $|d_z| < 0.5~\mathrm{cm}$"),
+    (
+        "diag_eventKinematics_track_dRJet0p5",
+        r"$\geq 1$ track with $\Delta R(\mathrm{track},\mathrm{jet}) > 0.5$",
+    ),
+    (
+        "diag_eventKinematics_track_layers4plus",
+        r"$\geq 1$ track with $n_{\mathrm{layers}} \geq 4$",
+    ),
+    (
+        "diag_eventKinematics_track_calo10",
+        r"$\geq 1$ track with calorimeter energy $<10~\mathrm{GeV}$",
+    ),
+    (
+        "diag_eventKinematics_track_missingOuter3",
+        r"$\geq 1$ track with missing outer hits $\geq 3$",
+    ),
+    (
+        "diag_eventKinematics_track_electronVeto",
+        r"$\geq 1$ track passing the electron veto",
+    ),
+    (
+        "diag_eventKinematics_track_muonVeto",
+        r"$\geq 1$ track passing the muon veto",
+    ),
+    (
+        "diag_eventKinematics_track_tauVeto",
+        r"$\geq 1$ track passing the hadronic tau veto",
+    ),
+    ("search", r"event search kinematics and $\geq 1$ disappearing track"),
+]
+
 LEPTON_PVETO_CUTFLOW_ROWS = {
     "electron": [
         ("electron_pveto_diag_event_singleele_trigger", r"event passes SingleElectron triggers"),
@@ -535,6 +619,65 @@ def write_muon_cutflow_latex(
             out.write(r"\centering" + "\n")
             out.write(r"\caption{Muon tag-and-probe cutflow.}" + "\n")
             out.write(r"\label{tab:muon_tp_cutflow}" + "\n")
+
+        out.write(r"\begin{tabular}{lrrr}" + "\n")
+        out.write(r"\hline" + "\n")
+        out.write(
+            r"Cut & Events & $\epsilon_{\mathrm{prev}}$ & "
+            r"$\epsilon_{\mathrm{total}}$ \\" + "\n"
+        )
+        out.write(r"\hline" + "\n")
+
+        first = None
+        previous = None
+        for label, value in rows:
+            if first is None:
+                first = value
+            eff_prev = value / previous if previous else 1.0
+            eff_total = value / first if first else 0.0
+            out.write(
+                f"{label} & {format_count(value)} & "
+                f"{eff_prev:.4f} & {eff_total:.4f} \\\\\n"
+            )
+            previous = value
+
+        out.write(r"\hline" + "\n")
+        out.write(r"\end{tabular}" + "\n")
+        if include_table_env:
+            out.write(r"\end{table}" + "\n")
+
+
+def write_signal_search_cutflow_latex(
+    cutflow: dict[str, Any],
+    path: Path,
+    *,
+    dataset: str | None = None,
+    sample: str | None = None,
+    variation: str = "nominal",
+    include_table_env: bool = False,
+) -> None:
+    """Write the current signal-search diagnostic cutflow table."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rows = [
+        (
+            label,
+            _category_count(
+                cutflow,
+                category,
+                dataset=dataset,
+                sample=sample,
+                variation=variation,
+            ),
+        )
+        for category, label in SIGNAL_SEARCH_CUTFLOW_ROWS
+    ]
+
+    with path.open("w") as out:
+        if include_table_env:
+            out.write(r"\begin{table}[htbp]" + "\n")
+            out.write(r"\centering" + "\n")
+            out.write(r"\caption{Signal-search diagnostic cutflow.}" + "\n")
+            out.write(r"\label{tab:signal_search_cutflow}" + "\n")
 
         out.write(r"\begin{tabular}{lrrr}" + "\n")
         out.write(r"\hline" + "\n")

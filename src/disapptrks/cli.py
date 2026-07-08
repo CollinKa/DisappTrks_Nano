@@ -29,10 +29,12 @@ from .summaries import (
     summarize_veto_probability,
 )
 from .tables import (
+    SIGNAL_SEARCH_CUTFLOW_ROWS,
     variable_count_sum,
     write_lepton_pveto_cutflow_latex,
     write_muon_cutflow_latex,
     write_muon_pveto_latex,
+    write_signal_search_cutflow_latex,
 )
 
 PairVariableTemplate = Union[str, tuple[str, str]]
@@ -514,6 +516,33 @@ def _make_pveto_tables_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _make_signal_cutflow_table_command(args: argparse.Namespace) -> int:
+    cutflow = _load_merged_cutflow(args.files)
+    missing = [
+        category
+        for category, _ in SIGNAL_SEARCH_CUTFLOW_ROWS
+        if category.startswith("diag_") and category not in cutflow
+    ]
+    if missing:
+        print(
+            "Warning: missing signal diagnostic cutflow categories. "
+            "Run PocketCoffea with DISAPPTRKS_CATEGORY_MODE=signal_search "
+            "or set DISAPPTRKS_ENABLE_SEARCH_DIAGNOSTICS=1. "
+            f"First missing category: {missing[0]}"
+        )
+
+    write_signal_search_cutflow_latex(
+        cutflow,
+        args.output,
+        dataset=args.dataset,
+        sample=args.sample,
+        variation=args.variation,
+        include_table_env=args.table_env,
+    )
+    print(f"Wrote {args.output}")
+    return 0
+
+
 def _make_lepton_pveto_table_command(args: argparse.Namespace) -> int:
     outputs = _load_outputs(args.files)
     cutflow = {}
@@ -753,6 +782,28 @@ def main():
         help="SS cutflow category subtracted from the numerator.",
     )
     pveto_tables.set_defaults(func=_make_pveto_tables_command)
+
+    signal_cutflow = subparsers.add_parser(
+        "make-signal-cutflow-table",
+        help="Write a signal-search diagnostic cutflow LaTeX table.",
+    )
+    signal_cutflow.add_argument("files", nargs="+", type=Path)
+    signal_cutflow.add_argument("--dataset", help="Restrict to one dataset key.")
+    signal_cutflow.add_argument("--sample", help="Restrict to one sample key.")
+    signal_cutflow.add_argument("--variation", default="nominal")
+    signal_cutflow.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        default=Path("signal_search_cutflow.tex"),
+        help="Output path for the signal-search cutflow LaTeX table.",
+    )
+    signal_cutflow.add_argument(
+        "--table-env",
+        action="store_true",
+        help="Wrap the tabular in a LaTeX table environment.",
+    )
+    signal_cutflow.set_defaults(func=_make_signal_cutflow_table_command)
 
     lepton_pveto_table = subparsers.add_parser(
         "make-lepton-pveto-table",

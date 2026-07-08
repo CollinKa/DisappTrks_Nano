@@ -159,10 +159,16 @@ if dataset_sample:
     dataset_filter["samples"] = [dataset_sample]
 if dataset_year:
     dataset_filter["year"] = [dataset_year]
-enable_search_diagnostics = os.environ.get(
-    "DISAPPTRKS_ENABLE_SEARCH_DIAGNOSTICS", ""
-).lower() in ("1", "true", "yes", "on")
 category_mode = os.environ.get("DISAPPTRKS_CATEGORY_MODE", "muon_pveto")
+enable_search_diagnostics = category_mode in (
+    "signal_search",
+    "signal_sim",
+) or os.environ.get("DISAPPTRKS_ENABLE_SEARCH_DIAGNOSTICS", "").lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
 data_quality_cuts = [golden_json_lumi, event_flags, jet_veto_map]
 diagnostic_categories = (
     {f"diag_{name}": [cut] for name, cut in search_diagnostic_cuts.items()}
@@ -247,6 +253,10 @@ elif category_mode == "fake_tracks":
         **common_categories,
         **fake_track_categories,
     }
+elif category_mode in ("signal_search", "signal_sim"):
+    selected_categories = {
+        **common_categories,
+    }
 elif category_mode == "all":
     selected_categories = {
         **common_categories,
@@ -262,7 +272,7 @@ else:
     raise ValueError(
         "Unknown DISAPPTRKS_CATEGORY_MODE="
         f"{category_mode!r}. Expected one of muon_pveto, electron_pveto, "
-        "tau_mu_pveto, tau_ele_pveto, fake_tracks, all."
+        "tau_mu_pveto, tau_ele_pveto, fake_tracks, signal_search, signal_sim, all."
     )
 
 selected_categories = {
