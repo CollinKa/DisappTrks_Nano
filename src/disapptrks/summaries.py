@@ -68,8 +68,12 @@ def cutflow_count(
         raise KeyError(f"category {category!r} not found in cutflow")
 
     value: Any = cutflow[category]
+    if isinstance(value, Number):
+        return float(value)
     if dataset is not None:
         value = value[dataset]
+    if isinstance(value, Number):
+        return float(value)
     if sample is not None:
         if isinstance(value, dict) and sample in value:
             value = value[sample]
