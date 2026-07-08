@@ -169,9 +169,20 @@ enable_search_diagnostics = category_mode in (
     "yes",
     "on",
 )
-data_quality_cuts = [golden_json_lumi, event_flags, jet_veto_map]
+data_quality_cuts = (
+    []
+    if category_mode in ("signal_search", "signal_sim")
+    else [golden_json_lumi, event_flags, jet_veto_map]
+)
+diagnostic_cut_items = search_diagnostic_cuts.items()
+if category_mode in ("signal_search", "signal_sim"):
+    diagnostic_cut_items = (
+        (name, cut)
+        for name, cut in search_diagnostic_cuts.items()
+        if not name.startswith("track_")
+    )
 diagnostic_categories = (
-    {f"diag_{name}": [cut] for name, cut in search_diagnostic_cuts.items()}
+    {f"diag_{name}": [cut] for name, cut in diagnostic_cut_items}
     if enable_search_diagnostics
     else {}
 )
