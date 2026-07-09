@@ -27,6 +27,8 @@ from cuts import (
     event_flags,
     electron_pveto_diagnostic_cuts,
     fake_track_cuts,
+    figure1_cuts,
+    figure1_diagnostic_cuts,
     golden_json_lumi,
     has_disappearing_track,
     jet_veto_map,
@@ -198,6 +200,11 @@ electron_pveto_diagnostic_categories = {
     f"electron_pveto_diag_{name}": [cut]
     for name, cut in electron_pveto_diagnostic_cuts.items()
 }
+figure1_categories = {name: [cut] for name, cut in figure1_cuts.items()}
+figure1_diagnostic_categories = {
+    f"figure1_diag_{name}": [cut]
+    for name, cut in figure1_diagnostic_cuts.items()
+}
 tau_pveto_diagnostic_categories = {
     f"tau_pveto_diag_{name}": [cut]
     for name, cut in tau_pveto_diagnostic_cuts.items()
@@ -268,14 +275,22 @@ elif category_mode in ("signal_search", "signal_sim"):
     selected_categories = {
         **common_categories,
     }
+elif category_mode == "figure1":
+    selected_categories = {
+        "inclusive": [passthrough],
+        **figure1_categories,
+        **figure1_diagnostic_categories,
+    }
 elif category_mode == "all":
     selected_categories = {
         **common_categories,
         **muon_pveto_categories,
         **lepton_pveto_categories,
         **fake_track_categories,
+        **figure1_categories,
         **muon_table16_categories,
         **electron_pveto_diagnostic_categories,
+        **figure1_diagnostic_categories,
         **tau_pveto_diagnostic_categories,
         **muon_pveto_layer_categories,
     }
@@ -283,7 +298,8 @@ else:
     raise ValueError(
         "Unknown DISAPPTRKS_CATEGORY_MODE="
         f"{category_mode!r}. Expected one of muon_pveto, electron_pveto, "
-        "tau_mu_pveto, tau_ele_pveto, fake_tracks, signal_search, signal_sim, all."
+        "tau_mu_pveto, tau_ele_pveto, fake_tracks, signal_search, signal_sim, "
+        "figure1, all."
     )
 
 selected_categories = {
@@ -1059,6 +1075,48 @@ cfg = Configurator(
                     label="Search track phi",
                 ),
             ]
+        ),
+        "figure1ElectronControl_caloVsMissingOuter": HistConf(
+            [
+                Axis(
+                    coll="IsoTrackFigure1Electron",
+                    field="missingOuterHits",
+                    bins=16,
+                    start=-0.5,
+                    stop=15.5,
+                    label=r"$N_{\mathrm{miss}}^{\mathrm{out}}$",
+                ),
+                Axis(
+                    coll="IsoTrackFigure1Electron",
+                    field="rawCaloEnergy",
+                    bins=100,
+                    start=0,
+                    stop=100,
+                    label=r"$E_{\mathrm{calo}}$ [GeV]",
+                ),
+            ],
+            only_categories=["inclusive"],
+        ),
+        "figure1Signal_caloVsMissingOuter": HistConf(
+            [
+                Axis(
+                    coll="IsoTrackFigure1Signal",
+                    field="missingOuterHits",
+                    bins=16,
+                    start=-0.5,
+                    stop=15.5,
+                    label=r"$N_{\mathrm{miss}}^{\mathrm{out}}$",
+                ),
+                Axis(
+                    coll="IsoTrackFigure1Signal",
+                    field="rawCaloEnergy",
+                    bins=100,
+                    start=0,
+                    stop=100,
+                    label=r"$E_{\mathrm{calo}}$ [GeV]",
+                ),
+            ],
+            only_categories=["inclusive"],
         ),
     },
     columns={},
