@@ -26,6 +26,10 @@ EVENT_DIAGNOSTIC_FIELDS = [
     "event_jetMetDphi0p5",
 ]
 
+GEN_DIAGNOSTIC_FIELDS = [
+    "gen_lightestChargino",
+]
+
 TRACK_DIAGNOSTIC_FIELDS = [
     "track_eta2p1",
     "track_pt55",
@@ -61,7 +65,10 @@ COMBINED_DIAGNOSTIC_FIELDS.insert(
 )
 
 SEARCH_DIAGNOSTIC_FIELDS = (
-    EVENT_DIAGNOSTIC_FIELDS + TRACK_DIAGNOSTIC_FIELDS + COMBINED_DIAGNOSTIC_FIELDS
+    GEN_DIAGNOSTIC_FIELDS
+    + EVENT_DIAGNOSTIC_FIELDS
+    + TRACK_DIAGNOSTIC_FIELDS
+    + COMBINED_DIAGNOSTIC_FIELDS
 )
 
 PVETO_LAYERS = ("NLayers4", "NLayers5", "NLayers6plus")
@@ -149,6 +156,69 @@ ELECTRON_PVETO_DIAGNOSTIC_FIELDS = [
     "pair_os",
     "layer_combinedBins",
     "pair_pass_electron_pveto",
+]
+
+FIGURE1_DIAGNOSTIC_FIELDS = [
+    "electron_event_singleele_trigger",
+    "electron_event_met_filters",
+    "electron_event_jet_pt_eta_tightlepveto",
+    "electron_event_dijet_dphi",
+    "electron_event_jet_veto_map",
+    "electron_tag_pt35",
+    "electron_tag_eta2p1",
+    "electron_tag_tight_id",
+    "electron_tag_dxy",
+    "electron_tag_dz",
+    "electron_tag_selected_tag",
+    "electron_tag_random",
+    "electron_track_pt55",
+    "electron_track_elecDR0p1",
+    "electron_track_matchRecoElec",
+    "electron_track_eta2p1",
+    "electron_track_noECALCrack",
+    "electron_track_noDTWheelGap",
+    "electron_track_noCSCTransition",
+    "electron_track_noTOBCrack",
+    "electron_track_fiducialElectron",
+    "electron_track_fiducialMuon",
+    "electron_track_fiducialECAL",
+    "electron_track_pixelHits4",
+    "electron_track_validHits4",
+    "electron_track_noMissingInner",
+    "electron_track_noMissingMiddle",
+    "electron_track_chargedIso0p05",
+    "electron_track_dxy0p02",
+    "electron_track_dz0p5",
+    "electron_track_dRJet0p5",
+    "electron_track_layers6plus",
+    "signal_event_metTrigger",
+    "signal_event_metFilters",
+    "signal_event_passEcalBadCalibFilterUpdate",
+    "signal_event_goodPV",
+    "signal_event_metNoMu120",
+    "signal_event_leadingJet110",
+    "signal_event_leadingJetEta2p4",
+    "signal_event_leadingJetTightLepVeto",
+    "signal_event_dijetDphi2p5",
+    "signal_event_jetMetDphi0p5",
+    "signal_track_pt55",
+    "signal_track_eta2p1",
+    "signal_track_noECALCrack",
+    "signal_track_noDTWheelGap",
+    "signal_track_noCSCTransition",
+    "signal_track_noTOBCrack",
+    "signal_track_fiducialECAL",
+    "signal_track_fiducialElectron",
+    "signal_track_fiducialMuon",
+    "signal_track_pixelHits4",
+    "signal_track_validHits4",
+    "signal_track_noMissingInner",
+    "signal_track_noMissingMiddle",
+    "signal_track_chargedIso0p05",
+    "signal_track_dxy0p02",
+    "signal_track_dz0p5",
+    "signal_track_dRJet0p5",
+    "signal_track_layers6plus",
 ]
 
 TAU_PVETO_DIAGNOSTIC_FIELDS = [
@@ -517,6 +587,10 @@ def _electron_pveto_diagnostic(events, params, **kwargs):
     return events.ElectronPVetoDiag[params["field"]]
 
 
+def _figure1_diagnostic(events, params, **kwargs):
+    return events.Figure1Diag[params["field"]]
+
+
 def _tau_pveto_diagnostic(events, params, **kwargs):
     return events[params["collection"]][params["field"]]
 
@@ -682,6 +756,17 @@ def _make_count_cut(name, field):
         function=_has_count,
     )
 
+
+figure1_cuts = {
+    "figure1_electron_control": _make_count_cut(
+        "figure1_electron_control",
+        "nIsoTrackFigure1Electron",
+    ),
+    "figure1_signal": _make_count_cut(
+        "figure1_signal",
+        "nIsoTrackFigure1Signal",
+    ),
+}
 
 lepton_pveto_cuts = {
     "electron_veto_tag": _make_count_cut("electron_veto_tag", "nElectronTag"),
@@ -851,6 +936,15 @@ electron_pveto_diagnostic_cuts = {
         function=_electron_pveto_diagnostic,
     )
     for field in ELECTRON_PVETO_DIAGNOSTIC_FIELDS
+}
+
+figure1_diagnostic_cuts = {
+    field: Cut(
+        name=f"figure1_diag_{field}",
+        params={"field": field},
+        function=_figure1_diagnostic,
+    )
+    for field in FIGURE1_DIAGNOSTIC_FIELDS
 }
 
 tau_pveto_diagnostic_cuts = {
