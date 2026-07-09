@@ -21,6 +21,8 @@ from disapptrks.selections import (
     electron_tag_progression_masks,
     electron_tag_mask,
     fake_track_no_d0_mask,
+    figure1_electron_control_track_cutflow_masks,
+    gen_lightest_chargino_mask,
     generic_probe_pair_layer_mask,
     invariant_mass,
     lepton_veto_probe_track_mask,
@@ -44,6 +46,7 @@ from disapptrks.selections import (
     search_track_cutflow_masks,
     search_track_mask,
     single_electron_trigger_mask,
+    random_arbitrated_electron_tag_mask,
     run3_tight_lepton_veto_jet_mask,
     ss_mass10_muon_probe_pair_mask,
     ss_muon_probe_pair_mask,
@@ -480,6 +483,13 @@ class DisappTrksProcessor(BaseProcessorABC):
         self.events["ElectronTag"] = self.events.Electron[
             electron_tag_mask(self.events.Electron, self.events)
         ]
+        figure1_electron_tag_mask = random_arbitrated_electron_tag_mask(
+            self.events.Electron,
+            self.events,
+        )
+        self.events["ElectronTagFigure1"] = self.events.Electron[
+            figure1_electron_tag_mask
+        ]
         tau_ele_tag_mask = _z_electron_tag_mask(self.events.Electron, pt_min=32.0)
         self.events["ElectronLowMTTag"] = self.events.Electron[tau_ele_tag_mask][
             low_mt_mask(self.events.Electron[tau_ele_tag_mask], tag_met)
@@ -495,6 +505,44 @@ class DisappTrksProcessor(BaseProcessorABC):
         ]
         self.events["TauVetoProbeTrack"] = self.events.IsoTrack[
             tau_veto_probe_track_mask(self.events.IsoTrack)
+        ]
+        jet_veto2022 = _jet_veto_map_mask(
+            self.events,
+            processor_params=self.params,
+            year=self._year,
+            era=self._era,
+            sample=self._sample,
+            is_mc=self._isMC,
+        )
+        electron_figure1_event = (
+            single_electron_trigger_mask(self.events)
+            & _met_filters_mask(self.events)
+            & self.events.AnalysisEvent.hasJetPt110Eta2p4TightLepVeto
+            & (
+                (self.events.AnalysisEvent.dijetMaxDeltaPhi < 0.0)
+                | (self.events.AnalysisEvent.dijetMaxDeltaPhi < 2.5)
+            )
+            & jet_veto2022
+        )
+        electron_figure1_track_masks = figure1_electron_control_track_cutflow_masks(
+            self.events.IsoTrack,
+            self.events.Electron,
+            figure1_electron_tag_mask,
+        )
+        self.events["IsoTrackFigure1Electron"] = self.events.IsoTrack[
+            electron_figure1_event
+            & electron_figure1_track_masks["track_layers6plus"]
+        ]
+        signal_figure1_event = (
+            search_event_cutflow_masks(self.events.AnalysisEvent)["event_jetMetDphi0p5"]
+            & jet_veto2022
+        )
+        signal_figure1_track_masks = search_track_cutflow_masks(
+            self.events.IsoTrack,
+            layer="NLayers6plus",
+        )
+        self.events["IsoTrackFigure1Signal"] = self.events.IsoTrack[
+            signal_figure1_event & signal_figure1_track_masks["track_layers6plus"]
         ]
         muon_veto_pairs = build_muon_veto_tag_probe_pairs(
             self.events.MuonTag, self.events.MuonVetoProbeTrack
@@ -612,11 +660,18 @@ class DisappTrksProcessor(BaseProcessorABC):
         self.events["nMuonTag"] = ak.num(self.events.MuonTag)
         self.events["nIsoTrackProbe"] = ak.num(self.events.IsoTrackProbe)
         self.events["nElectronTag"] = ak.num(self.events.ElectronTag)
+        self.events["nElectronTagFigure1"] = ak.num(self.events.ElectronTagFigure1)
         self.events["nMuonLowMTTag"] = ak.num(self.events.MuonLowMTTag)
         self.events["nElectronLowMTTag"] = ak.num(self.events.ElectronLowMTTag)
         self.events["nMuonVetoProbeTrack"] = ak.num(self.events.MuonVetoProbeTrack)
         self.events["nElectronVetoProbeTrack"] = ak.num(self.events.ElectronVetoProbeTrack)
         self.events["nTauVetoProbeTrack"] = ak.num(self.events.TauVetoProbeTrack)
+        self.events["nIsoTrackFigure1Electron"] = ak.num(
+            self.events.IsoTrackFigure1Electron
+        )
+        self.events["nIsoTrackFigure1Signal"] = ak.num(
+            self.events.IsoTrackFigure1Signal
+        )
         self.events["nMuonVetoTagProbePair"] = ak.num(
             self.events.MuonVetoTagProbePair
         )
@@ -1166,6 +1221,111 @@ class DisappTrksProcessor(BaseProcessorABC):
             probe_mass=ELECTRON_MASS,
         )
 
+        figure1_diagnostics = {}
+        figure1_jet_veto = _jet_veto_map_mask(
+            self.events,
+            processor_params=self.params,
+            year=self._year,
+            era=self._era,
+            sample=self._sample,
+            is_mc=self._isMC,
+        )
+        figure1_electron_event = (
+            event_singleele_trigger
+            & _met_filters_mask(self.events)
+            & self.events.AnalysisEvent.hasJetPt110Eta2p4TightLepVeto
+            & (
+                (self.events.AnalysisEvent.dijetMaxDeltaPhi < 0.0)
+                | (self.events.AnalysisEvent.dijetMaxDeltaPhi < 2.5)
+            )
+            & figure1_jet_veto
+        )
+        figure1_diagnostics.update(
+            {
+                "electron_event_singleele_trigger": event_singleele_trigger,
+                "electron_event_met_filters": event_ele_met_filters,
+                "electron_event_jet_pt_eta_tightlepveto": (
+                    event_ele_met_filters
+                    & self.events.AnalysisEvent.hasJetPt110Eta2p4TightLepVeto
+                ),
+                "electron_event_dijet_dphi": (
+                    event_ele_met_filters
+                    & self.events.AnalysisEvent.hasJetPt110Eta2p4TightLepVeto
+                    & (
+                        (self.events.AnalysisEvent.dijetMaxDeltaPhi < 0.0)
+                        | (self.events.AnalysisEvent.dijetMaxDeltaPhi < 2.5)
+                    )
+                ),
+                "electron_event_jet_veto_map": figure1_electron_event,
+            }
+        )
+        figure1_electron_tag_masks = electron_tag_progression_masks(
+            self.events.Electron,
+            self.events,
+        )
+        figure1_arbitrated_tag_mask = random_arbitrated_electron_tag_mask(
+            self.events.Electron,
+            self.events,
+        )
+        for name, mask in figure1_electron_tag_masks.items():
+            label = name.removeprefix("electron_")
+            figure1_diagnostics[f"electron_tag_{label}"] = (
+                figure1_electron_event & (ak.num(self.events.Electron[mask]) >= 1)
+            )
+        figure1_diagnostics["electron_tag_random"] = (
+            figure1_electron_event
+            & (ak.num(self.events.Electron[figure1_arbitrated_tag_mask]) >= 1)
+        )
+        figure1_electron_track_masks = figure1_electron_control_track_cutflow_masks(
+            self.events.IsoTrack,
+            self.events.Electron,
+            figure1_arbitrated_tag_mask,
+        )
+        figure1_has_tag = figure1_diagnostics["electron_tag_random"]
+        for name, mask in figure1_electron_track_masks.items():
+            figure1_diagnostics[f"electron_{name}"] = (
+                figure1_has_tag & (ak.num(self.events.IsoTrack[mask]) >= 1)
+            )
+
+        figure1_signal_event_masks = search_event_cutflow_masks(
+            self.events.AnalysisEvent
+        )
+        for name, mask in figure1_signal_event_masks.items():
+            figure1_diagnostics[f"signal_{name}"] = mask
+        figure1_signal_event = (
+            figure1_signal_event_masks["event_jetMetDphi0p5"]
+            & figure1_jet_veto
+        )
+        figure1_signal_track_masks = search_track_cutflow_masks(
+            self.events.IsoTrack,
+            layer="NLayers6plus",
+        )
+        for name in (
+            "track_pt55",
+            "track_eta2p1",
+            "track_noECALCrack",
+            "track_noDTWheelGap",
+            "track_noCSCTransition",
+            "track_noTOBCrack",
+            "track_fiducialECAL",
+            "track_fiducialElectron",
+            "track_fiducialMuon",
+            "track_pixelHits4",
+            "track_validHits4",
+            "track_noMissingInner",
+            "track_noMissingMiddle",
+            "track_chargedIso0p05",
+            "track_dxy0p02",
+            "track_dz0p5",
+            "track_dRJet0p5",
+            "track_layers6plus",
+        ):
+            figure1_diagnostics[f"signal_{name}"] = (
+                figure1_signal_event
+                & (ak.num(self.events.IsoTrack[figure1_signal_track_masks[name]]) >= 1)
+            )
+        self.events["Figure1Diag"] = ak.zip(figure1_diagnostics)
+
         track_diagnostics = {}
         diagnostics = {}
         for name, mask in search_figure17_track_cutflow_masks(self.events.IsoTrack).items():
@@ -1173,9 +1333,16 @@ class DisappTrksProcessor(BaseProcessorABC):
             self.events[n_name] = ak.num(self.events.IsoTrack[mask])
             track_diagnostics[name] = self.events[n_name] >= 1
 
-        diagnostics.update(track_diagnostics)
+        gen_lightest_chargino = gen_lightest_chargino_mask(self.events)
+        diagnostics["gen_lightestChargino"] = gen_lightest_chargino
+        for name, mask in track_diagnostics.items():
+            diagnostics[name] = gen_lightest_chargino & mask
 
         event_diagnostics = search_event_cutflow_masks(self.events.AnalysisEvent)
+        event_diagnostics = {
+            name: gen_lightest_chargino & mask
+            for name, mask in event_diagnostics.items()
+        }
         diagnostics.update(event_diagnostics)
         event_search_kinematics = event_diagnostics["event_jetMetDphi0p5"]
         jet_veto2022 = _jet_veto_map_mask(
