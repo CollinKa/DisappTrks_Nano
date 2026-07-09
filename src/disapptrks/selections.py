@@ -110,6 +110,17 @@ def _good_primary_vertex_mask(events):
     return _event_bool_like(events, True)
 
 
+def gen_lightest_chargino_mask(events, *, pdg_id: int = 1000024):
+    """Return events containing at least one lightest chargino GenPart."""
+    import awkward as ak
+
+    if "GenPart" in events.fields and "pdgId" in events.GenPart.fields:
+        return ak.any(abs(events.GenPart.pdgId) == pdg_id, axis=1)
+    if "GenPart_pdgId" in events.fields:
+        return ak.any(abs(events.GenPart_pdgId) == pdg_id, axis=1)
+    return _event_bool_like(events, False)
+
+
 def _fiducial_map_path(flavor: str):
     override = os.environ.get(f"DISAPPTRKS_{flavor.upper()}_FIDUCIAL_MAP")
     if override:
@@ -430,10 +441,11 @@ def hadronic_tau_veto_object_mask(
 
 
 def layer_mask(tracks, layer: str):
-    layers = tracks.hp_nValidTrackerHits
     # Prefer the explicit layer count when supplied by the custom extension.
     if "hp_trackerLayersWithMeasurement" in tracks.fields:
         layers = tracks.hp_trackerLayersWithMeasurement
+    else:
+        layers = tracks.hp_nValidTrackerHits
     if layer == "NLayers4":
         return layers == 4
     if layer == "NLayers5":
@@ -477,6 +489,7 @@ def add_isotrack_derived_fields(events):
             "isFiducialMuonTrack",
         )
     raw_calo_energy = tracks.caloEm + tracks.caloHad
+    tracks = ak.with_field(tracks, raw_calo_energy, "rawCaloEnergy")
     if "caloTotNoPU" in tracks.fields:
         calo_energy = tracks.caloTotNoPU
     else:
@@ -519,6 +532,101 @@ def add_isotrack_derived_fields(events):
         tracks, minimum_delta_r(tracks, events.Tau, good_taus), "dRMinTauHad"
     )
     return tracks
+
+
+def random_arbitrated_electron_tag_mask(electrons, events):
+    """Pick one selected Figure-1 electron tag per event, reproducibly."""
+    import awkward as ak
+
+    tag_mask = electron_tag_mask(electrons, events)
+    electron_index = ak.local_index(electrons.pt)
+    selected_indices = electron_index[tag_mask]
+    n_selected = ak.num(selected_indices)
+    modulo = ak.where(n_selected > 0, n_selected, 1)
+    event_number = events.event if "event" in events.fields else events.run
+    chosen_rank = event_number % modulo
+    selected_rank = ak.local_index(selected_indices)
+    chosen_index = ak.firsts(selected_indices[selected_rank == chosen_rank])
+    return ak.fill_none(tag_mask & (electron_index == chosen_index), False)
+
+
+def figure1_electron_control_track_cutflow_masks(
+    tracks,
+    electrons,
+    selected_electron_mask,
+):
+    """Cumulative track masks for the Figure-1 electron-control selection."""
+    import awkward as ak
+
+    selected_electron_dr = minimum_delta_r(
+        tracks,
+        electrons,
+        selected_electron_mask,
+    )
+    masks = {}
+    mask = tracks.pt > 55.0
+    masks["track_pt55"] = mask
+
+    mask = mask & (selected_electron_dr >= 0.0) & (selected_electron_dr < 0.1)
+    masks["track_elecDR0p1"] = mask
+
+    masked_dr = ak.where(mask, selected_electron_dr, np.inf)
+    best_dr = ak.min(masked_dr, axis=1)
+    mask = mask & (selected_electron_dr == best_dr)
+    masks["track_matchRecoElec"] = mask
+
+    mask = mask & (abs(tracks.eta) < 2.1)
+    masks["track_eta2p1"] = mask
+
+    mask = mask & ~tracks.inECALCrack
+    masks["track_noECALCrack"] = mask
+
+    mask = mask & ~tracks.inDTWheelGap
+    masks["track_noDTWheelGap"] = mask
+
+    mask = mask & ~tracks.inCSCTransition
+    masks["track_noCSCTransition"] = mask
+
+    mask = mask & ~tracks.inTOBCrack
+    masks["track_noTOBCrack"] = mask
+
+    mask = mask & tracks.isFiducialElectronTrack
+    masks["track_fiducialElectron"] = mask
+
+    mask = mask & tracks.isFiducialMuonTrack
+    masks["track_fiducialMuon"] = mask
+
+    mask = mask & tracks.isFiducialECALTrack
+    masks["track_fiducialECAL"] = mask
+
+    mask = mask & (tracks.hp_nValidPixelHits >= 4)
+    masks["track_pixelHits4"] = mask
+
+    mask = mask & (tracks.hp_nValidHits >= 4)
+    masks["track_validHits4"] = mask
+
+    mask = mask & (tracks.missingInnerHits == 0)
+    masks["track_noMissingInner"] = mask
+
+    mask = mask & (tracks.missingMiddleHits == 0)
+    masks["track_noMissingMiddle"] = mask
+
+    mask = mask & (tracks.pfRelIso03_chg < 0.05)
+    masks["track_chargedIso0p05"] = mask
+
+    mask = mask & (abs(tracks.dxy) < 0.02)
+    masks["track_dxy0p02"] = mask
+
+    mask = mask & (abs(tracks.dz) < 0.5)
+    masks["track_dz0p5"] = mask
+
+    mask = mask & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
+    masks["track_dRJet0p5"] = mask
+
+    mask = mask & layer_mask(tracks, "NLayers6plus")
+    masks["track_layers6plus"] = mask
+
+    return masks
 
 
 def base_probe_track_mask(
