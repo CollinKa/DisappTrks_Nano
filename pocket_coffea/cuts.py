@@ -1031,6 +1031,33 @@ search_kinematics = Cut(
     function=_search_kinematics,
 )
 
+# Defining the basic selection from the AN. The MET triggers are applied
+# as preselections which is why they do not show up here.
+basic_event_selection = Cut(
+    name="basic_event_selection",
+    params={
+        "met_min": 120.0,
+        "jet_pt_min": 110.0,
+        "jet_eta_max": 2.4,
+        "dijet_dphi_max": 2.5,
+        "jet_met_dphi_min": 0.5,
+    },
+    function=_search_kinematics,
+)
+
+basic_selection = basic_event_selection
+isolated_track_selection = Cut(
+    name="isolated_track_selection",
+    params={"field": "nIsoTrackIsolated", "minimum": 1},
+    function=_has_count,
+)
+candidate_track_selection = Cut(
+    name="candidate_track_selection",
+    params={"field": "nIsoTrackCandidate", "minimum": 1},
+    function=_has_count,
+)
+disappearing_track_selection = has_disappearing_track
+
 search_diagnostic_cuts = {
     field: Cut(
         name=field,

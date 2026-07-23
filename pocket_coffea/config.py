@@ -26,6 +26,10 @@ import cuts
 import workflow
 from cuts import (
     event_flags,
+    basic_event_selection,
+    candidate_track_selection,
+    disappearing_track_selection,
+    isolated_track_selection,
     electron_pveto_diagnostic_cuts,
     fake_track_cuts,
     golden_json_lumi,
@@ -324,8 +328,25 @@ tau_pveto_diagnostic_categories = {
 
 common_categories = {
     "inclusive": [passthrough],
-    "basic_selection": [search_kinematics],
-    "search": [search_kinematics, has_disappearing_track],
+    "basic_selection": [basic_event_selection],
+    "isolated_track_selection": [basic_event_selection, isolated_track_selection],
+    "candidate_track_selection": [
+        basic_event_selection,
+        isolated_track_selection,
+        candidate_track_selection,
+    ],
+    "disappearing_track_selection": [
+        basic_event_selection,
+        isolated_track_selection,
+        candidate_track_selection,
+        disappearing_track_selection,
+    ],
+    "search": [
+        basic_event_selection,
+        isolated_track_selection,
+        candidate_track_selection,
+        disappearing_track_selection,
+    ],
 }
 muon_pveto_categories = {
     "muon_veto_tag": [has_muon_tag],
@@ -944,6 +965,30 @@ cfg = Configurator(
         **lepton_pair_count_variables,
         **lepton_background_count_variables,
         **fiducial_map_variables,
+        "nIsoTrackIsolated": HistConf(
+            [
+                Axis(
+                    coll="events",
+                    field="nIsoTrackIsolated",
+                    bins=10,
+                    start=0,
+                    stop=10,
+                    label="N(isolated tracks)",
+                )
+            ]
+        ),
+        "nIsoTrackCandidate": HistConf(
+            [
+                Axis(
+                    coll="events",
+                    field="nIsoTrackCandidate",
+                    bins=10,
+                    start=0,
+                    stop=10,
+                    label="N(candidate tracks)",
+                )
+            ]
+        ),
         "nIsoTrackSearch": HistConf(
             [
                 Axis(

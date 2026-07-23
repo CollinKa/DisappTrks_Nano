@@ -28,17 +28,17 @@ class LeptonBackgroundEstimate:
     control: Count
     p_veto: Count
     p_offline: Count
-    p_trigger: Count
+    p_miss: Count
     estimate: Count
     control_category: str
     poffline_numerator_category: str
     poffline_denominator_category: str
-    ptrigger_numerator_category: str
-    ptrigger_denominator_category: str
+    pmiss_numerator_category: str
+    pmiss_denominator_category: str
 
     def as_dict(self) -> dict[str, Any]:
         out = asdict(self)
-        for key in ("control", "p_veto", "p_offline", "p_trigger", "estimate"):
+        for key in ("control", "p_veto", "p_offline", "p_miss", "estimate"):
             value = out[key]
             out[key] = {
                 "value": value["value"],
@@ -46,6 +46,12 @@ class LeptonBackgroundEstimate:
                 "variance": value["variance"],
             }
         return out
+
+    @property
+    def p_trigger(self) -> Count:
+        """Backward-compatible alias for the AN ``Pmiss`` factor."""
+
+        return self.p_miss
 
 
 def _category_name(pattern: str, layer: str) -> str:
@@ -137,19 +143,27 @@ def estimate_lepton_background(
     control_category: str,
     poffline_numerator_category: str,
     poffline_denominator_category: str,
-    ptrigger_numerator_category: str,
-    ptrigger_denominator_category: str,
+    pmiss_numerator_category: str | None = None,
+    pmiss_denominator_category: str | None = None,
+    ptrigger_numerator_category: str | None = None,
+    ptrigger_denominator_category: str | None = None,
     dataset: str | None = None,
     sample: str | None = None,
     variation: str = "nominal",
 ) -> list[LeptonBackgroundEstimate]:
     estimates = []
+    pmiss_numerator_category = pmiss_numerator_category or ptrigger_numerator_category
+    pmiss_denominator_category = pmiss_denominator_category or ptrigger_denominator_category
+    if pmiss_numerator_category is None or pmiss_denominator_category is None:
+        raise ValueError(
+            "pmiss_numerator_category and pmiss_denominator_category are required"
+        )
     for layer in layers:
         control_name = _category_name(control_category, layer)
         poffline_num_name = _category_name(poffline_numerator_category, layer)
         poffline_den_name = _category_name(poffline_denominator_category, layer)
-        ptrigger_num_name = _category_name(ptrigger_numerator_category, layer)
-        ptrigger_den_name = _category_name(ptrigger_denominator_category, layer)
+        pmiss_num_name = _category_name(pmiss_numerator_category, layer)
+        pmiss_den_name = _category_name(pmiss_denominator_category, layer)
 
         control = _count_from_source(
             counts=counts,
@@ -177,11 +191,11 @@ def estimate_lepton_background(
                 variation=variation,
             ),
         )
-        ptrigger = probability_from_counts(
+        pmiss = probability_from_counts(
             _count_from_source(
                 counts=counts,
                 cutflow=cutflow,
-                category=ptrigger_num_name,
+                category=pmiss_num_name,
                 dataset=dataset,
                 sample=sample,
                 variation=variation,
@@ -189,7 +203,7 @@ def estimate_lepton_background(
             _count_from_source(
                 counts=counts,
                 cutflow=cutflow,
-                category=ptrigger_den_name,
+                category=pmiss_den_name,
                 dataset=dataset,
                 sample=sample,
                 variation=variation,
@@ -203,13 +217,13 @@ def estimate_lepton_background(
                 control=control,
                 p_veto=p_veto,
                 p_offline=poffline,
-                p_trigger=ptrigger,
-                estimate=control * p_veto * poffline * ptrigger,
+                p_miss=pmiss,
+                estimate=control * p_veto * poffline * pmiss,
                 control_category=control_name,
                 poffline_numerator_category=poffline_num_name,
                 poffline_denominator_category=poffline_den_name,
-                ptrigger_numerator_category=ptrigger_num_name,
-                ptrigger_denominator_category=ptrigger_den_name,
+                pmiss_numerator_category=pmiss_num_name,
+                pmiss_denominator_category=pmiss_den_name,
             )
         )
     return estimates
@@ -241,7 +255,7 @@ def write_lepton_background_latex(
         out.write(r"\hline" + "\n")
         out.write(
             r"run period & flavor/layer & $N_{\mathrm{ctrl}}$ & $P_{\mathrm{veto}}$ & "
-            r"$P_{\mathrm{offline}}$ & $P_{\mathrm{trigger}}$ & $N_{\ell}$ \\" + "\n"
+            r"$P_{\mathrm{offline}}$ & $P_{\mathrm{miss}}$ & $N_{\ell}$ \\" + "\n"
         )
         out.write(r"\hline" + "\n")
         for estimate in estimates:
@@ -250,7 +264,7 @@ def write_lepton_background_latex(
                 f"{format_count(estimate.control.value)} & "
                 f"{format_pm_latex(estimate.p_veto.value, estimate.p_veto.error)} & "
                 f"{format_pm_latex(estimate.p_offline.value, estimate.p_offline.error)} & "
-                f"{format_pm_latex(estimate.p_trigger.value, estimate.p_trigger.error)} & "
+                f"{format_pm_latex(estimate.p_miss.value, estimate.p_miss.error)} & "
                 f"{format_value_with_uncertainty(estimate.estimate.value, estimate.estimate.error)} "
                 r"\\" + "\n"
             )

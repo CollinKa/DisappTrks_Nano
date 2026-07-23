@@ -804,14 +804,14 @@ def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
         args.poffline_denominator_category
         or control_category
     )
-    ptrigger_numerator_category = (
-        args.ptrigger_numerator_category
-        or args.pmiss_numerator_category
+    pmiss_numerator_category = (
+        args.pmiss_numerator_category
+        or args.ptrigger_numerator_category
         or f"{args.mode}_background_trigger_{{layer}}"
     )
-    ptrigger_denominator_category = (
-        args.ptrigger_denominator_category
-        or args.pmiss_denominator_category
+    pmiss_denominator_category = (
+        args.pmiss_denominator_category
+        or args.ptrigger_denominator_category
         or poffline_numerator_category
     )
 
@@ -823,8 +823,8 @@ def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
         control_category=control_category,
         poffline_numerator_category=poffline_numerator_category,
         poffline_denominator_category=poffline_denominator_category,
-        ptrigger_numerator_category=ptrigger_numerator_category,
-        ptrigger_denominator_category=ptrigger_denominator_category,
+        pmiss_numerator_category=pmiss_numerator_category,
+        pmiss_denominator_category=pmiss_denominator_category,
         dataset=args.dataset,
         sample=args.sample,
         variation=args.variation,
@@ -848,7 +848,7 @@ def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
             f"{estimate.estimate.value:.6g} ± {estimate.estimate.error:.6g} "
             f"(P_veto={estimate.p_veto.value:.6g}, "
             f"P_offline={estimate.p_offline.value:.6g}, "
-            f"P_trigger={estimate.p_trigger.value:.6g})"
+            f"P_miss={estimate.p_miss.value:.6g})"
         )
     return 0
 
@@ -1200,7 +1200,7 @@ def main():
         "estimate-lepton-background",
         help=(
             "Compute lepton-background estimates from Pveto pair counts plus "
-            "Poffline/Ptrigger control-category ratios."
+            "Poffline/Pmiss control-category ratios."
         ),
     )
     lepton_background.add_argument("files", nargs="+", type=Path)
@@ -1252,24 +1252,28 @@ def main():
     lepton_background.add_argument(
         "--ptrigger-numerator-category",
         help=(
-            "Category pattern for the Ptrigger numerator. May use {layer}. "
-            "Defaults to <mode>_background_trigger_{layer}."
+            "Compatibility alias for --pmiss-numerator-category."
         ),
     )
     lepton_background.add_argument(
         "--ptrigger-denominator-category",
         help=(
-            "Category pattern for the Ptrigger denominator. May use {layer}. "
-            "Defaults to the Poffline numerator."
+            "Compatibility alias for --pmiss-denominator-category."
         ),
     )
     lepton_background.add_argument(
         "--pmiss-numerator-category",
-        help="Alias for --ptrigger-numerator-category.",
+        help=(
+            "Category pattern for the Pmiss numerator. May use {layer}. "
+            "Defaults to <mode>_background_trigger_{layer}."
+        ),
     )
     lepton_background.add_argument(
         "--pmiss-denominator-category",
-        help="Alias for --ptrigger-denominator-category.",
+        help=(
+            "Category pattern for the Pmiss denominator. May use {layer}. "
+            "Defaults to the Poffline numerator."
+        ),
     )
     lepton_background.add_argument(
         "--output-json",

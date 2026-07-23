@@ -19,6 +19,7 @@ from disapptrks.selections import (
     base_probe_track_mask,
     build_lepton_veto_tag_probe_pairs,
     build_muon_veto_tag_probe_pairs,
+    candidate_track_selection_mask,
     electron_pveto_pair_pass_mask,
     electron_tag_progression_masks,
     electron_tag_mask,
@@ -27,6 +28,7 @@ from disapptrks.selections import (
     fiducial_map_probe_track_mask,
     generic_probe_pair_layer_mask,
     invariant_mass,
+    isolated_track_selection_mask,
     lepton_veto_probe_track_mask,
     low_mt_mask,
     mass10_muon_probe_pair_mask,
@@ -1013,6 +1015,12 @@ class DisappTrksProcessor(BaseProcessorABC):
         self.events["IsoTrackProbe"] = self.events.IsoTrack[
             base_probe_track_mask(self.events.IsoTrack)
         ]
+        self.events["IsoTrackIsolated"] = self.events.IsoTrack[
+            isolated_track_selection_mask(self.events.IsoTrack)
+        ]
+        self.events["IsoTrackCandidate"] = self.events.IsoTrack[
+            candidate_track_selection_mask(self.events.IsoTrack)
+        ]
 
         tag_met = None
         if self._mode_enabled("muon_pveto"):
@@ -1257,6 +1265,8 @@ class DisappTrksProcessor(BaseProcessorABC):
     def _count_common_search_fields(self):
         self.events["nIsoTrack"] = ak.num(self.events.IsoTrack)
         self.events["nIsoTrackProbe"] = ak.num(self.events.IsoTrackProbe)
+        self.events["nIsoTrackIsolated"] = ak.num(self.events.IsoTrackIsolated)
+        self.events["nIsoTrackCandidate"] = ak.num(self.events.IsoTrackCandidate)
         self.events["nIsoTrackSearchPreMissingOuter"] = ak.num(
             self.events.IsoTrackSearchPreMissingOuter
         )

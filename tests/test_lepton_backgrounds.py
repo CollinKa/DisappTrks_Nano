@@ -30,13 +30,14 @@ def test_estimate_lepton_background_uses_an_product():
         control_category="electron_background_control_{layer}",
         poffline_numerator_category="electron_background_offline_{layer}",
         poffline_denominator_category="electron_background_control_{layer}",
-        ptrigger_numerator_category="electron_background_trigger_{layer}",
-        ptrigger_denominator_category="electron_background_offline_{layer}",
+        pmiss_numerator_category="electron_background_trigger_{layer}",
+        pmiss_denominator_category="electron_background_offline_{layer}",
     )
 
     estimate = estimates[0]
     assert estimate.p_veto.value == 0.1
     assert estimate.p_offline.value == 0.25
+    assert estimate.p_miss.value == 0.8
     assert estimate.p_trigger.value == 0.8
     assert estimate.estimate.value == 2.0
 
@@ -61,8 +62,8 @@ def test_write_lepton_background_outputs(tmp_path: Path):
         control_category="control_{layer}",
         poffline_numerator_category="offline_{layer}",
         poffline_denominator_category="control_{layer}",
-        ptrigger_numerator_category="trigger_{layer}",
-        ptrigger_denominator_category="offline_{layer}",
+        pmiss_numerator_category="trigger_{layer}",
+        pmiss_denominator_category="offline_{layer}",
     )
 
     json_path = tmp_path / "lepton.json"
@@ -70,8 +71,8 @@ def test_write_lepton_background_outputs(tmp_path: Path):
     write_lepton_background_json(estimates, json_path)
     write_lepton_background_latex(estimates, tex_path, run_period="2023D")
 
-    assert '"p_trigger"' in json_path.read_text()
+    assert '"p_miss"' in json_path.read_text()
     text = tex_path.read_text()
     assert "P_{\\mathrm{offline}}" in text
-    assert "P_{\\mathrm{trigger}}" in text
+    assert "P_{\\mathrm{miss}}" in text
     assert "2023D" in text

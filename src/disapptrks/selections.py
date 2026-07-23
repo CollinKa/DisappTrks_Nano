@@ -295,6 +295,41 @@ def layer_mask(tracks, layer: str):
     raise ValueError(f"unknown layer bin: {layer}")
 
 
+ISOLATED_TRACK_SELECTION_FIELDS = (
+    "track_pt55",
+    "track_eta2p1",
+    "track_noECALCrack",
+    "track_noDTWheelGap",
+    "track_noCSCTransition",
+    "track_noTOBCrack",
+    "track_fiducialECAL",
+    "track_pixelHits4",
+    "track_validHits4",
+    "track_noMissingInner",
+    "track_noMissingMiddle",
+    "track_chargedIso0p05",
+    "track_dxy0p02",
+    "track_dz0p5",
+    "track_dRJet0p5",
+    "track_layers4plus",
+)
+
+
+CANDIDATE_TRACK_SELECTION_FIELDS = (
+    *ISOLATED_TRACK_SELECTION_FIELDS,
+    "track_electronVeto",
+    "track_muonVeto",
+    "track_tauVeto",
+)
+
+
+DISAPPEARING_TRACK_SELECTION_FIELDS = (
+    *CANDIDATE_TRACK_SELECTION_FIELDS,
+    "track_calo10",
+    "track_missingOuter3",
+)
+
+
 def add_isotrack_derived_fields(events):
     """Attach transparent analysis quantities to the ``IsoTrack`` collection."""
     import awkward as ak
@@ -404,6 +439,85 @@ def base_probe_track_mask(
     if apply_outer_hits_cut:
         mask = mask & (tracks.missingOuterHits >= 3)
     return mask
+
+
+def isolated_track_selection_mask(
+    tracks,
+    *,
+    pt_min: float = 55.0,
+    layer: str = "combinedBins",
+):
+    """AN Table-18 isolated-track selection before later candidate-track cuts.
+
+    This wrapper gives the legacy ``isoTrkWithPt55Cuts`` requirements a name
+    matching the AN: pT, eta/crack/fiducial regions, hit and missing-hit
+    quality, track isolation, impact parameters, track-jet separation, and the
+    requested layer bin.  Calorimeter energy, missing outer hits, and lepton
+    vetoes are intentionally left for the disappearing-track candidate stage.
+    """
+
+    if pt_min == 55.0:
+        return isolated_track_selection_cutflow_masks(tracks, layer=layer)[
+            "track_layers4plus"
+        ]
+
+    return base_probe_track_mask(
+        tracks,
+        pt_min=pt_min,
+        layer=layer,
+        apply_jet_cut=True,
+        apply_calo_cut=False,
+        apply_outer_hits_cut=False,
+    )
+
+
+def isolated_track_selection_cutflow_masks(tracks, *, layer: str = "combinedBins"):
+    """Cumulative masks through the AN Table-18 isolated-track endpoint."""
+
+    search_masks = search_track_cutflow_masks(tracks, layer=layer)
+    return {
+        field: search_masks[field]
+        for field in ISOLATED_TRACK_SELECTION_FIELDS
+    }
+
+
+def candidate_track_selection_cutflow_masks(tracks, *, layer: str = "combinedBins"):
+    """Cumulative masks through the AN Table-19 candidate-track endpoint."""
+
+    masks = dict(isolated_track_selection_cutflow_masks(tracks, layer=layer))
+    mask = masks["track_layers4plus"]
+
+    mask = mask & ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
+    masks["track_electronVeto"] = mask
+
+    mask = mask & ((tracks.dRMinMuon < 0.0) | (tracks.dRMinMuon > 0.15))
+    masks["track_muonVeto"] = mask
+
+    mask = mask & ((tracks.dRMinTauHad < 0.0) | (tracks.dRMinTauHad > 0.15))
+    masks["track_tauVeto"] = mask
+
+    return masks
+
+
+def candidate_track_selection_mask(tracks, *, layer: str = "combinedBins"):
+    """AN Table-19 candidate-track selection."""
+
+    return candidate_track_selection_cutflow_masks(tracks, layer=layer)["track_tauVeto"]
+
+
+def disappearing_track_selection_cutflow_masks(tracks, *, layer: str = "combinedBins"):
+    """Cumulative masks through the AN Table-20 disappearing-track endpoint."""
+
+    masks = dict(candidate_track_selection_cutflow_masks(tracks, layer=layer))
+    mask = masks["track_tauVeto"]
+
+    mask = mask & (tracks.caloEnergy < 10.0)
+    masks["track_calo10"] = mask
+
+    mask = mask & (tracks.missingOuterHits >= 3)
+    masks["track_missingOuter3"] = mask
+
+    return masks
 
 
 def fiducial_map_probe_track_mask(
@@ -919,6 +1033,14 @@ def search_track_mask(tracks, *, layer: str = "combinedBins"):
     )
 
 
+def disappearing_track_selection_mask(tracks, *, layer: str = "combinedBins"):
+    """AN Table-20 disappearing-track selection for the search region."""
+
+    return disappearing_track_selection_cutflow_masks(tracks, layer=layer)[
+        "track_missingOuter3"
+    ]
+
+
 def fake_track_no_d0_mask(
     tracks,
     *,
@@ -1155,6 +1277,25 @@ def search_event_cutflow_masks(
     masks["event_jetMetDphi0p5"] = mask
 
     return masks
+
+
+def basic_event_selection_mask(
+    analysis_event,
+    *,
+    met_min: float = 120.0,
+    jet_pt_min: float = 110.0,
+    jet_met_dphi_min: float = 0.5,
+    dijet_dphi_max: float = 2.5,
+):
+    """AN-style BasicSelection event mask."""
+
+    return search_event_cutflow_masks(
+        analysis_event,
+        met_min=met_min,
+        jet_pt_min=jet_pt_min,
+        jet_met_dphi_min=jet_met_dphi_min,
+        dijet_dphi_max=dijet_dphi_max,
+    )["event_jetMetDphi0p5"]
 
 
 def add_event_derived_fields(events):

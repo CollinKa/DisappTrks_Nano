@@ -259,6 +259,10 @@ assumed to be embedded in a separate track table.
 See [MIGRATION.md](MIGRATION.md) for the source-to-PocketCoffea mapping and
 validation sequence.
 
+For collaborator-facing details on PocketCoffea category modes, where to edit
+cuts, and a step-by-step muon Pveto workflow, see
+[docs/pocket_coffea_workflows.md](docs/pocket_coffea_workflows.md).
+
 Run unit tests with:
 
 ```bash
