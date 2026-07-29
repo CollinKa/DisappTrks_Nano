@@ -1015,8 +1015,12 @@ class DisappTrksProcessor(BaseProcessorABC):
         event_quality,
         met_cut=120.0,
         phi_cut=0.5,
-    ):
-        met_pt, met_phi = _met_no_mu_minus_lepton(self.events, tags)
+    ):  
+        if flavor == "muon":
+            met_pt = self.events.MetNoMu.pt
+            met_phi = self.events.MetNoMu.phi
+        else:
+            met_pt, met_phi = _met_no_mu_minus_lepton(self.events, tags)
         tag_event = (
             event_quality
             & (ak.num(tags) >= 1)
@@ -1396,7 +1400,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                 self._store_lepton_background_controls(
                     prefix="Muon",
                     flavor="muon",
-                    tags=self.events.MuonTag,
+                    tags=self.events.MuonTag, 
                     event_quality=event_quality,
                 )
             if (
