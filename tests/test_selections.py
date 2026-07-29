@@ -7,6 +7,7 @@ from disapptrks.selections import (
     build_muon_veto_tag_probe_pairs,
     fiducial_map_probe_track_mask,
     muon_veto_probe_track_mask,
+    select_random_fiducial_tag_probe_pair,
 )
 
 
@@ -93,6 +94,73 @@ def test_muon_pairs_keep_loose_muon_veto_separate_from_generic_veto():
 
     assert ak.to_list(pairs.probe_passMuonVeto) == [[False]]
     assert ak.to_list(pairs.probe_passLooseMuonVeto) == [[True]]
+    assert ak.to_list(pairs.tag_index) == [[0]]
+    assert ak.to_list(pairs.probe_index) == [[0]]
+
+
+def test_fiducial_random_arbitration_is_one_pair_and_event_stable():
+    pairs = ak.Array(
+        [
+            [
+                {"tag_index": 0, "probe_index": 0, "probe_eta": 0.1},
+                {"tag_index": 0, "probe_index": 1, "probe_eta": 0.2},
+                {"tag_index": 1, "probe_index": 2, "probe_eta": 0.3},
+            ],
+            [],
+            [
+                {"tag_index": 0, "probe_index": 3, "probe_eta": 1.1},
+                {"tag_index": 1, "probe_index": 4, "probe_eta": 1.2},
+            ],
+        ]
+    )
+    run = ak.Array([355100, 355100, 355101])
+    lumi = ak.Array([10, 10, 20])
+    event = ak.Array([1001, 1002, 2001])
+
+    selected = select_random_fiducial_tag_probe_pair(
+        pairs,
+        run,
+        lumi,
+        event,
+        stage="before",
+        seed=20220723,
+    )
+    repeated = select_random_fiducial_tag_probe_pair(
+        pairs,
+        run,
+        lumi,
+        event,
+        stage="before",
+        seed=20220723,
+    )
+
+    assert ak.to_list(ak.num(selected)) == [1, 0, 1]
+    assert ak.to_list(selected) == ak.to_list(repeated)
+
+    order = [2, 0, 1]
+    reordered = select_random_fiducial_tag_probe_pair(
+        pairs[order],
+        run[order],
+        lumi[order],
+        event[order],
+        stage="before",
+        seed=20220723,
+    )
+    selected_by_event = {
+        event_id: record
+        for event_id, record in zip(
+            ak.to_list(event),
+            ak.to_list(selected),
+        )
+    }
+    reordered_by_event = {
+        event_id: record
+        for event_id, record in zip(
+            ak.to_list(event[order]),
+            ak.to_list(reordered),
+        )
+    }
+    assert selected_by_event == reordered_by_event
 
 
 def test_fiducial_map_probe_uses_legacy_old_hit_cuts():
