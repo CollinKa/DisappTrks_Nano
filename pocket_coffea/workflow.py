@@ -48,6 +48,7 @@ from disapptrks.selections import (
     search_event_cutflow_masks,
     search_track_cutflow_masks,
     search_track_mask,
+    select_random_fiducial_tag_probe_pair,
     single_electron_trigger_mask,
     run3_tight_lepton_veto_jet_mask,
     ss_mass10_muon_probe_pair_mask,
@@ -784,6 +785,14 @@ class DisappTrksProcessor(BaseProcessorABC):
             in ("1", "true", "yes", "on")
         )
 
+    def _fiducial_random_seed(self):
+        try:
+            return int(self.params.disapptrks.fiducial_random_seed)
+        except Exception:
+            return int(
+                os.environ.get("DISAPPTRKS_FIDUCIAL_RANDOM_SEED", "20220723")
+            )
+
     def _mode_enabled(self, *modes):
         mode = self._category_mode()
         expanded_modes = {
@@ -965,10 +974,20 @@ class DisappTrksProcessor(BaseProcessorABC):
         """
 
         if "Muon" in self.events.fields:
-            self.events["MuonFiducialTag"] = self.events.Muon[
+            indexed_muons = ak.with_field(
+                self.events.Muon,
+                ak.local_index(self.events.Muon, axis=1),
+                "_fiducial_index",
+            )
+            indexed_tracks = ak.with_field(
+                self.events.IsoTrack,
+                ak.local_index(self.events.IsoTrack, axis=1),
+                "_fiducial_index",
+            )
+            self.events["MuonFiducialTag"] = indexed_muons[
                 muon_tag_mask(self.events.Muon)
             ]
-            muon_probes = self.events.IsoTrack[
+            muon_probes = indexed_tracks[
                 fiducial_map_probe_track_mask(self.events.IsoTrack, flavor="muon")
             ]
             muon_pairs = build_muon_veto_tag_probe_pairs(
@@ -976,10 +995,31 @@ class DisappTrksProcessor(BaseProcessorABC):
                 muon_probes,
             )
             muon_z = os_z_window_muon_probe_pair_mask(muon_pairs)
-            self.events["MuonFiducialBefore"] = muon_pairs[muon_z]
-            self.events["MuonFiducialAfter"] = muon_pairs[
+            muon_before = muon_pairs[muon_z]
+            muon_after = muon_pairs[
                 muon_z & muon_pairs.probe_passLooseMuonVeto
             ]
+            if self._category_mode() == "fiducial_maps_random_track":
+                event_id = (
+                    self.events.run,
+                    self.events.luminosityBlock,
+                    self.events.event,
+                )
+                seed = self._fiducial_random_seed()
+                muon_before = select_random_fiducial_tag_probe_pair(
+                    muon_before,
+                    *event_id,
+                    stage="before",
+                    seed=seed,
+                )
+                muon_after = select_random_fiducial_tag_probe_pair(
+                    muon_after,
+                    *event_id,
+                    stage="after",
+                    seed=seed,
+                )
+            self.events["MuonFiducialBefore"] = muon_before
+            self.events["MuonFiducialAfter"] = muon_after
 
         if "Electron" in self.events.fields:
             self.events["ElectronFiducialTag"] = self.events.Electron[
@@ -1006,7 +1046,13 @@ class DisappTrksProcessor(BaseProcessorABC):
 
     def apply_object_preselection(self, variation):
         if (
-            self._mode_enabled("muon_pveto", "tau_mu_pveto", "fake_zmumu", "fiducial_maps")
+            self._mode_enabled(
+                "muon_pveto",
+                "tau_mu_pveto",
+                "fake_zmumu",
+                "fiducial_maps",
+                "fiducial_maps_random_track",
+            )
             or self._category_mode() == "fake_tracks"
         ):
             self.events["Muon"] = add_muon_derived_fields(self.events)
@@ -1215,7 +1261,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                     event_quality=event_quality,
                 )
 
-        if self._mode_enabled("fiducial_maps"):
+        if self._mode_enabled("fiducial_maps", "fiducial_maps_random_track"):
             self._store_fiducial_map_pairs()
 
         search_diagnostic_masks = search_track_cutflow_masks(self.events.IsoTrack)

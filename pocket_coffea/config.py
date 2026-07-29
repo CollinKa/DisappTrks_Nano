@@ -241,6 +241,9 @@ if fake_track_control_mode not in ("basic", "zmumu", "zee"):
     )
 parameters["disapptrks"] = {
     "category_mode": category_mode,
+    "fiducial_random_seed": int(
+        os.environ.get("DISAPPTRKS_FIDUCIAL_RANDOM_SEED", "20220723")
+    ),
     "fake_track_control": fake_track_control_mode,
     "full_workflow": os.environ.get("DISAPPTRKS_FULL_WORKFLOW", "").lower()
     in ("1", "true", "yes", "on"),
@@ -257,7 +260,7 @@ def _skim_cuts_for_mode(mode, sample):
         return [single_muon_hlt]
     if mode in ("electron_pveto", "tau_ele_pveto", "egamma_backgrounds"):
         return [single_electron_hlt]
-    if mode == "fiducial_maps":
+    if mode in ("fiducial_maps", "fiducial_maps_random_track"):
         if sample == "DATA_Muon":
             return [single_muon_hlt]
         if sample == "DATA_EGamma":
@@ -466,7 +469,7 @@ elif category_mode == "egamma_backgrounds":
         **_categories_with_prefix(lepton_background_categories, "electron_", "tau_ele_"),
         **fake_track_zee_categories,
     }
-elif category_mode == "fiducial_maps":
+elif category_mode in ("fiducial_maps", "fiducial_maps_random_track"):
     selected_categories = {
         "inclusive": common_categories["inclusive"],
     }
@@ -488,7 +491,7 @@ else:
         "Unknown DISAPPTRKS_CATEGORY_MODE="
         f"{category_mode!r}. Expected one of muon_pveto, electron_pveto, "
         "tau_mu_pveto, tau_ele_pveto, fake_tracks, muon_backgrounds, "
-        "egamma_backgrounds, fiducial_maps, all."
+        "egamma_backgrounds, fiducial_maps, fiducial_maps_random_track, all."
     )
 
 selected_categories = {
@@ -560,6 +563,7 @@ def _variables_for_mode(mode, variables):
         "muon_backgrounds": ("nMuon", "nTauMu", "fakeZMuMuFitTrack_"),
         "egamma_backgrounds": ("nElectron", "nTauEle", "fakeZeeFitTrack_"),
         "fiducial_maps": ("electronFiducial", "muonFiducial"),
+        "fiducial_maps_random_track": ("electronFiducial", "muonFiducial"),
     }
     prefixes = prefixes_by_mode.get(mode)
     if prefixes is None:
