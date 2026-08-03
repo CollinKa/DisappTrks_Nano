@@ -1390,7 +1390,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                 )
             )
             if (
-                self._mode_enabled("muon_pveto", "muon_pmiss_poffline")
+                self._mode_enabled( "muon_pmiss_poffline")
                 and "MuonTag" in self.events.fields
             ):
                 self._store_lepton_background_controls(
@@ -1400,7 +1400,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                     event_quality=event_quality,
                 )
             if (
-                self._mode_enabled("electron_pveto", "electron_pmiss_poffline")
+                self._mode_enabled( "electron_pmiss_poffline")
                 and "ElectronTag" in self.events.fields
             ):
                 self._store_lepton_background_controls(
