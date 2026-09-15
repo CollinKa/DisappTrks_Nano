@@ -158,6 +158,7 @@ def _pair_counts_from_outputs(
     *,
     layers: list[str],
     variable_templates: dict[str, PairVariableTemplate],
+    category_templates: dict[str, PairVariableTemplate],
     dataset: str | None = None,
     sample: str | None = None,
 ) -> dict[str, dict[str, float]]:
@@ -169,6 +170,10 @@ def _pair_counts_from_outputs(
             key: _pair_variable_name(template, layer=layer, suffix=suffix)
             for key, template in variable_templates.items()
         }
+        categories = {
+            key: _pair_variable_name(template, layer=layer, suffix=suffix)
+            for key, template in category_templates.items()
+        }
         for output in outputs:
             output_variables = output.get("variables", {})
             for key, variable in variables.items():
@@ -177,6 +182,7 @@ def _pair_counts_from_outputs(
                     variable,
                     dataset=dataset,
                     sample=sample,
+                    category=categories[key],
                 )
         pair_counts[layer] = totals
     return pair_counts
@@ -229,6 +235,7 @@ def _muon_pair_counts_from_outputs(
         outputs,
         layers=layers,
         variable_templates=templates,
+        category_templates=LEPTON_PVETO_PAIR_CATEGORIES["muon"],
         dataset=dataset,
         sample=sample,
     )
@@ -453,6 +460,45 @@ LEPTON_PVETO_PAIR_VARIABLES = {
         "num_os": "nTauElePVetoTagProbePairMassWindowPass{suffix}",
         "den_ss": "nTauEleTagProbePairSSMassWindow{suffix}",
         "num_ss": "nTauElePVetoTagProbePairSSMassWindowPass{suffix}",
+    },
+}
+
+# PocketCoffea category names for the pair-count histograms above, keyed the
+# same way as LEPTON_PVETO_PAIR_VARIABLES. Each pair-count histogram carries a
+# "cat" axis spanning every category in the job, not just one value -- reading
+# it at the "inclusive" category (variable_count_sum's default) sums the whole
+# inclusive event count, not the pair count, since these histograms are only
+# meaningfully filled within their own veto/pveto category. Confirmed 2026-09-15
+# against real job outputs: muon and electron use a "*_zwindow*" category
+# naming (matching their legacy ZWindow-named histograms even though the
+# electron pair-count *variable* names above say "MassWindow"), while
+# tau_mu/tau_ele use "*_masswindow*" -- the two naming families are not
+# interchangeable, so this must stay a per-mode lookup rather than a single
+# shared template.
+LEPTON_PVETO_PAIR_CATEGORIES = {
+    "muon": {
+        "den_os": "muon_veto_zwindow{suffix}",
+        "num_os": "muon_pveto_zwindow_pass{suffix}",
+        "den_ss": "muon_veto_ss_zwindow{suffix}",
+        "num_ss": "muon_pveto_ss_zwindow_pass{suffix}",
+    },
+    "electron": {
+        "den_os": "electron_veto_zwindow{suffix}",
+        "num_os": "electron_pveto_zwindow_pass{suffix}",
+        "den_ss": "electron_veto_ss_zwindow{suffix}",
+        "num_ss": "electron_pveto_ss_zwindow_pass{suffix}",
+    },
+    "tau_mu": {
+        "den_os": "tau_mu_veto_masswindow{suffix}",
+        "num_os": "tau_mu_pveto_masswindow_pass{suffix}",
+        "den_ss": "tau_mu_veto_ss_masswindow{suffix}",
+        "num_ss": "tau_mu_pveto_ss_masswindow_pass{suffix}",
+    },
+    "tau_ele": {
+        "den_os": "tau_ele_veto_masswindow{suffix}",
+        "num_os": "tau_ele_pveto_masswindow_pass{suffix}",
+        "den_ss": "tau_ele_veto_ss_masswindow{suffix}",
+        "num_ss": "tau_ele_pveto_ss_masswindow_pass{suffix}",
     },
 }
 
@@ -1300,6 +1346,7 @@ def _make_lepton_pveto_table_command(args: argparse.Namespace) -> int:
             outputs,
             layers=args.layers,
             variable_templates=pair_count_templates,
+            category_templates=LEPTON_PVETO_PAIR_CATEGORIES[args.mode],
             dataset=args.dataset,
             sample=args.sample,
         )
@@ -1359,6 +1406,7 @@ def _make_tau_pveto_table_command(args: argparse.Namespace) -> int:
         tau_mu_outputs,
         layers=args.layers,
         variable_templates=LEPTON_PVETO_PAIR_VARIABLES["tau_mu"],
+        category_templates=LEPTON_PVETO_PAIR_CATEGORIES["tau_mu"],
         dataset=args.tau_mu_dataset or args.dataset,
         sample=args.tau_mu_sample,
     )
@@ -1366,6 +1414,7 @@ def _make_tau_pveto_table_command(args: argparse.Namespace) -> int:
         tau_ele_outputs,
         layers=args.layers,
         variable_templates=LEPTON_PVETO_PAIR_VARIABLES["tau_ele"],
+        category_templates=LEPTON_PVETO_PAIR_CATEGORIES["tau_ele"],
         dataset=args.tau_ele_dataset or args.dataset,
         sample=args.tau_ele_sample,
     )
@@ -1413,6 +1462,7 @@ def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
             outputs,
             layers=args.layers,
             variable_templates=LEPTON_PVETO_PAIR_VARIABLES[args.mode],
+            category_templates=LEPTON_PVETO_PAIR_CATEGORIES[args.mode],
             dataset=args.dataset,
             sample=args.sample,
         )
@@ -1586,6 +1636,7 @@ def _estimate_tau_background_command(args: argparse.Namespace) -> int:
         tau_mu_outputs,
         layers=args.layers,
         variable_templates=LEPTON_PVETO_PAIR_VARIABLES["tau_mu"],
+        category_templates=LEPTON_PVETO_PAIR_CATEGORIES["tau_mu"],
         dataset=args.tau_mu_dataset or args.dataset,
         sample=args.tau_mu_sample,
     )
@@ -1593,6 +1644,7 @@ def _estimate_tau_background_command(args: argparse.Namespace) -> int:
         tau_ele_outputs,
         layers=args.layers,
         variable_templates=LEPTON_PVETO_PAIR_VARIABLES["tau_ele"],
+        category_templates=LEPTON_PVETO_PAIR_CATEGORIES["tau_ele"],
         dataset=args.tau_ele_dataset or args.dataset,
         sample=args.tau_ele_sample,
     )
