@@ -2355,10 +2355,22 @@ class DisappTrksProcessor(BaseProcessorABC):
                     flavor="tau",
                     tags=self.events.TauControlTag,
                     event_quality=event_quality,
-                    # The framework skim supplies the cross-trigger condition;
-                    # legacy TauTagPt55 additionally required IsoMu24.  Keep
-                    # both explicit so no-skim diagnostics remain faithful.
-                    required_event_mask=cross_trigger & reference_trigger,
+                    # N_ctrl/Poffline/Pmiss are measured on the single-muon
+                    # reference-triggered baseline only -- matching legacy
+                    # TauTagPt55 (BackgroundEstimation/python/TauTagProbeSelections.py,
+                    # TauTagSkim.triggers = triggersSingleMu), the channel
+                    # actually used for the dissertation's tau background
+                    # estimate. The cross-trigger dependence enters separately
+                    # via tau_trigger_probability's P(tau) = P(cross)/P(single)
+                    # factor -- requiring it here too would pre-condition this
+                    # control sample on the cross-trigger, which the legacy
+                    # code never did. The framework skim also now only
+                    # requires the reference trigger, so this is redundant
+                    # with skim; keep it explicit anyway so no-skim
+                    # diagnostics stay faithful (diagnostic_cross_trigger
+                    # below still records the cross-trigger's own diagnostic
+                    # categories, just not as a selection requirement).
+                    required_event_mask=reference_trigger,
                     diagnostic_cross_trigger=cross_trigger,
                     diagnostic_reference_trigger=reference_trigger,
                     fiducial_hot_spots=(),

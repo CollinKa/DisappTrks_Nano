@@ -335,7 +335,15 @@ def _skim_cuts_for_mode(mode, sample):
     if mode == "tau_trigger_probability":
         return [tau_trigger_probability_hlt]
     if mode == "tau_pmiss_poffline":
-        return [muon_tau_hlt]
+        # N_ctrl/Poffline/Pmiss are measured on the single-muon-triggered
+        # baseline, matching the legacy DisappTrks BackgroundEstimation
+        # channel actually used for the dissertation's tau estimate
+        # (TauTagPt55 -> TauTagSkim.triggers = triggersSingleMu in
+        # BackgroundEstimation/python/TauTagProbeSelections.py). The
+        # cross-trigger dependence enters separately via tau_trigger_probability's
+        # P(tau) = P(cross)/P(single) factor, not by pre-conditioning this
+        # control sample on the cross-trigger having fired.
+        return [single_muon_hlt]
     if mode in (
         "electron_pveto",
         "tau_ele_pveto",
