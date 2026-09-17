@@ -571,7 +571,23 @@ def estimate_lepton_background(
             sample=sample,
             variation=variation,
         )
-        control = control_raw * control_prescale * tau_probability
+        if control_raw.value == 0.0:
+            # A raw Count built directly from an observed event count
+            # defaults to Poisson variance = value (see Count.__post_init__),
+            # which is itself 0 at value == 0 -- an observed zero is not an
+            # infinitely precise zero, so quote the standard zero-count 68%
+            # CL Poisson upper limit instead. Without this, the final
+            # estimate collapses to exactly 0 +/- 0 downstream even when
+            # Pveto has a real, nonzero uncertainty.
+            control_raw = Count(0.0, POISSON_ZERO_UPPER_68**2)
+        # Boundary-safe, not plain Count multiplication: Count.__mul__'s
+        # relative-variance formula collapses to zero uncertainty whenever
+        # an intermediate value is exactly zero (see control_raw above), so
+        # a plain `control_raw * control_prescale * tau_probability` would
+        # discard the Poisson upper bound just set on control_raw.
+        control = _multiply_counts_at_physical_boundary(
+            control_raw, Count(control_prescale, 0.0), tau_probability
+        )
         if met_probabilities is not None and poffline_pmiss_layer in met_probabilities:
             poffline, pmiss = met_probabilities[poffline_pmiss_layer]
         else:
@@ -625,23 +641,23 @@ def estimate_lepton_background(
                 f"trigger efficiency must be positive for layer {layer}; "
                 f"got {layer_trigger_efficiency.value}"
             )
-        estimate_numerator = (
-            _multiply_counts_at_physical_boundary(
-                control,
-                p_veto,
-                poffline,
-                pmiss,
-            )
-            if "tau" in flavor.lower()
-            else control * p_veto * poffline * pmiss
+        # Use the boundary-safe product/quotient for every flavor, not just
+        # tau: it is mathematically identical to plain Count arithmetic
+        # (control * p_veto * poffline * pmiss / trigger_efficiency) away
+        # from zero, but -- unlike Count.__mul__/__truediv__, whose relative-
+        # variance formula is undefined and guarded to 0.0 at a zero central
+        # value -- it keeps a factor's real uncertainty (e.g. control_raw
+        # observing zero raw control events, or a zero Pveto numerator) from
+        # silently collapsing the whole estimate to 0 +/- 0.
+        estimate_numerator = _multiply_counts_at_physical_boundary(
+            control,
+            p_veto,
+            poffline,
+            pmiss,
         )
-        estimate = (
-            _divide_counts_at_physical_boundary(
-                estimate_numerator,
-                layer_trigger_efficiency,
-            )
-            if "tau" in flavor.lower()
-            else estimate_numerator / layer_trigger_efficiency
+        estimate = _divide_counts_at_physical_boundary(
+            estimate_numerator,
+            layer_trigger_efficiency,
         )
         estimates.append(
             LeptonBackgroundEstimate(
@@ -788,7 +804,9 @@ def _write_lepton_background_latex_body(
     )
     out.write(header + "\n")
     out.write(r"\hline" + "\n")
-    for run_period, estimates in period_estimates:
+    for period_index, (run_period, estimates) in enumerate(period_estimates):
+        if period_index > 0:
+            out.write(r"\hline" + "\n")
         n_rows = len(estimates)
         for index, estimate in enumerate(estimates):
             run_period_cell = rf"\multirow{{{n_rows}}}{{*}}{{{run_period}}}" if index == 0 else ""
