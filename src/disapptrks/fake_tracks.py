@@ -20,7 +20,12 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from .summaries import cutflow_count
-from .tables import format_count, format_pm_latex, format_value_with_uncertainty
+from .tables import (
+    POISSON_ZERO_UPPER_68,
+    format_count,
+    format_pm_latex,
+    format_value_with_uncertainty,
+)
 
 
 SIDEBAND_MANIFEST_TRACK_FIELDS = (
@@ -1669,6 +1674,25 @@ def estimate_fake_track_background_an(
     raw_probability = sideband_events / control_events
     fake_probability = raw_probability * transfer_factor
 
+    # Count's multiplicative error propagation (variance = value^2 * sum of
+    # relative variances) collapses to exactly zero uncertainty whenever the
+    # central value is zero, since a "relative" variance is undefined at
+    # zero and the codebase's _relative_variance() guards it to 0.0 there.
+    # A zero observed sideband count is not an infinitely precise zero,
+    # though -- it's a Poisson measurement whose true rate could still be as
+    # high as the standard zero-count 68% CL upper limit. Quote that upper
+    # bound instead of a bare 0 +/- 0, propagated through the same
+    # transfer-factor/basic-yield multiplications while treating those
+    # (much better-measured) factors as exact, mirroring the zero-numerator
+    # branch of tables.pveto_with_asymmetric_uncertainty.
+    if sideband_events.value == 0.0 and control_events.value > 0.0:
+        raw_probability = Count(
+            0.0, (POISSON_ZERO_UPPER_68 / control_events.value) ** 2
+        )
+        fake_probability = Count(
+            0.0, (raw_probability.error * transfer_factor.value) ** 2
+        )
+
     basic_events = None
     fake_yield = None
     if basic_yield_category:
@@ -1681,6 +1705,10 @@ def estimate_fake_track_background_an(
             variation=variation if basic_variation is None else basic_variation,
         )
         fake_yield = fake_probability * basic_events
+        if sideband_events.value == 0.0 and control_events.value > 0.0:
+            fake_yield = Count(
+                0.0, (fake_probability.error * basic_events.value) ** 2
+            )
 
     return ANFakeTrackEstimate(
         control_region=control_region,
