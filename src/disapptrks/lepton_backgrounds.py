@@ -751,16 +751,14 @@ def _format_tau_boundary(value: float, error: float) -> str:
 
 
 def _format_tau_probability(value: float, error: float) -> str:
-    """Keep an order-one P(tau) central value while compacting a tiny error."""
+    """Format P(tau) in scientific notation, matching the exponent used for its error."""
 
-    if 0.0 < error < 1.0e-3:
-        exponent = int(floor(log10(error)))
-        scale = 10.0**exponent
-        value_text, _ = format_value_with_uncertainty(value, error)
-        scaled_error = error / scale
-        error_text = f"{scaled_error:.2g}"
-        return rf"{value_text} $\pm$ ${error_text} \times 10^{{{exponent}}}$"
-    return format_pm_latex(value, error)
+    if value == 0.0:
+        return format_pm_latex(value, error)
+    exponent = int(floor(log10(abs(value))))
+    scale = 10.0**exponent
+    value_text, error_text = format_value_with_uncertainty(value / scale, error / scale)
+    return rf"$({value_text} \pm {error_text}) \times 10^{{{exponent}}}$"
 
 
 def _write_lepton_background_latex_body(
