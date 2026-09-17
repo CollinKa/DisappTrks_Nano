@@ -53,6 +53,7 @@ from .lepton_backgrounds import (
     read_lepton_background_json,
     trigger_efficiency_from_counts,
     write_combined_lepton_background_latex,
+    write_combined_total_background_latex,
     write_lepton_background_json,
     write_lepton_background_latex,
 )
@@ -1841,6 +1842,56 @@ def _combine_lepton_background_tables_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _combine_total_background_table_command(args: argparse.Namespace) -> int:
+    muon_json: dict[str, Path] = {}
+    electron_json: dict[str, Path] = {}
+    tau_json: dict[str, Path] = {}
+    fake_json: dict[str, Path] = {}
+    periods: list[str] = []
+    for item in args.muon_input:
+        run_period, path = _parse_period_json_input(item)
+        muon_json[run_period] = path
+        periods.append(run_period)
+    for item in args.electron_input:
+        run_period, path = _parse_period_json_input(item)
+        electron_json[run_period] = path
+    for item in args.tau_input:
+        run_period, path = _parse_period_json_input(item)
+        tau_json[run_period] = path
+    for item in args.fake_input:
+        run_period, path = _parse_period_json_input(item)
+        fake_json[run_period] = path
+
+    for run_period in periods:
+        missing = [
+            name
+            for name, mapping in (
+                ("--electron-input", electron_json),
+                ("--tau-input", tau_json),
+                ("--fake-input", fake_json),
+            )
+            if run_period not in mapping
+        ]
+        if missing:
+            raise ValueError(
+                f"run period {run_period!r} was given via --muon-input but is "
+                f"missing from {', '.join(missing)}"
+            )
+
+    write_combined_total_background_latex(
+        periods,
+        muon_json,
+        electron_json,
+        tau_json,
+        fake_json,
+        args.output_tex,
+        include_table_env=args.table_env,
+        fake_control_region=args.fake_control_region,
+    )
+    print(f"Wrote {args.output_tex}")
+    return 0
+
+
 def _extract_tau_trigger_probability_command(args: argparse.Namespace) -> int:
     outputs = _load_outputs(args.files)
     numerator, denominator, probability = _tau_trigger_probability_from_outputs(
@@ -2854,6 +2905,64 @@ def main():
         help="Wrap the LaTeX tabular in a table environment.",
     )
     combined_lepton_background.set_defaults(func=_combine_lepton_background_tables_command)
+
+    combined_total_background = subparsers.add_parser(
+        "combine-total-background-table",
+        help=(
+            "Combine per-period muon/electron/tau lepton-background and "
+            "fake-track JSON summaries into one Leptons/Spurious Tracks/Total "
+            "LaTeX table."
+        ),
+    )
+    combined_total_background.add_argument(
+        "--muon-input",
+        action="append",
+        required=True,
+        help="Run-period label and muon estimate-lepton-background JSON, formatted as RUN_PERIOD=path.json. Repeat in the desired table order.",
+    )
+    combined_total_background.add_argument(
+        "--electron-input",
+        action="append",
+        required=True,
+        help="Run-period label and electron estimate-lepton-background JSON, formatted as RUN_PERIOD=path.json.",
+    )
+    combined_total_background.add_argument(
+        "--tau-input",
+        action="append",
+        required=True,
+        help="Run-period label and estimate-tau-background JSON, formatted as RUN_PERIOD=path.json.",
+    )
+    combined_total_background.add_argument(
+        "--fake-input",
+        action="append",
+        required=True,
+        help=(
+            "Run-period label and fake-track estimate JSON (from "
+            "estimate-fake-tracks/make-standard-fake-track-estimate), "
+            "formatted as RUN_PERIOD=path.json. The nominal control region "
+            "(--fake-control-region, default zmumu) is read from it; the "
+            "other control region is ignored, per the dissertation's "
+            "Z->mu mu-nominal/Z->ee-cross-check convention."
+        ),
+    )
+    combined_total_background.add_argument(
+        "--fake-control-region",
+        default="zmumu",
+        choices=["zmumu", "zee"],
+        help="Which fake-track control region feeds the Spurious Tracks column (default: zmumu, the nominal control).",
+    )
+    combined_total_background.add_argument(
+        "--output-tex",
+        type=Path,
+        required=True,
+        help="Write the combined LaTeX table.",
+    )
+    combined_total_background.add_argument(
+        "--table-env",
+        action="store_true",
+        help="Wrap the LaTeX tabular in a table environment.",
+    )
+    combined_total_background.set_defaults(func=_combine_total_background_table_command)
 
     fiducial_map = subparsers.add_parser(
         "make-fiducial-map",

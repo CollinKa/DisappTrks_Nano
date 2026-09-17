@@ -10,7 +10,7 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
-from .fake_tracks import Count
+from .fake_tracks import Count, _control_column_key, _count_from_payload, _layer_label
 from .summaries import cutflow_count
 from .tables import (
     CountWithVariance,
@@ -871,5 +871,109 @@ def write_combined_lepton_background_latex(
             period_estimates,
             tau_probability=tau_probability,
         )
+        if include_table_env:
+            out.write(r"\end{table}" + "\n")
+
+
+_TOTAL_BACKGROUND_LAYER_ORDER = ("NLayers4", "NLayers5", "NLayers6plus")
+
+
+def _add_counts(counts: Sequence[Count]) -> Count:
+    value = sum(count.value for count in counts)
+    variance = sum(count.variance for count in counts)
+    return Count(value, variance)
+
+
+def _fake_yield_by_layer(path: Path, *, control_region: str) -> dict[str, Count]:
+    payload = json.loads(path.read_text())
+    by_layer: dict[str, Count] = {}
+    for estimate in payload.get("estimates", []):
+        if _control_column_key(estimate["control_region"]) != control_region:
+            continue
+        by_layer[estimate["layer"]] = _count_from_payload(estimate["fake_yield"])
+    return by_layer
+
+
+def write_combined_total_background_latex(
+    periods: Sequence[str],
+    muon_json: Mapping[str, Path],
+    electron_json: Mapping[str, Path],
+    tau_json: Mapping[str, Path],
+    fake_json: Mapping[str, Path],
+    path: Path,
+    *,
+    include_table_env: bool = False,
+    fake_control_region: str = "zmumu",
+) -> None:
+    """Write a Leptons / Spurious Tracks / Total table spanning multiple run periods.
+
+    Sums the electron, muon, and tau lepton-background estimates ("Leptons")
+    and combines them with the fake-track estimate for a single nominal
+    control region ("Spurious Tracks", Z->mu mu by default -- Z->ee is a
+    cross-check, per the dissertation's convention, not folded in here).
+    Statistical uncertainties only, propagated in quadrature (independent
+    measurements: variances add).
+    """
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w") as out:
+        if include_table_env:
+            out.write(r"\begin{table}[htbp]" + "\n")
+            out.write(r"\centering" + "\n")
+            out.write(
+                r"\caption{Expected backgrounds: leptons, spurious tracks, and "
+                r"total, per run period and layer bin (statistical uncertainties "
+                r"only).}" + "\n"
+            )
+            out.write(r"\label{tab:total_background_estimate}" + "\n")
+        out.write(r"\begin{tabular}{llccc}" + "\n")
+        out.write(r"\hline" + "\n")
+        out.write(r" & & \multicolumn{3}{c}{Expected Backgrounds} \\" + "\n")
+        out.write(
+            r"Run Period & $n_{\mathrm{layers}}$ & Leptons & "
+            r"Spurious Tracks & Total \\" + "\n"
+        )
+        out.write(r"\hline" + "\n")
+        for period_index, period in enumerate(periods):
+            muon = {
+                estimate.layer: estimate.estimate
+                for estimate in read_lepton_background_json(muon_json[period])
+            }
+            electron = {
+                estimate.layer: estimate.estimate
+                for estimate in read_lepton_background_json(electron_json[period])
+            }
+            tau = {
+                estimate.layer: estimate.estimate
+                for estimate in read_lepton_background_json(tau_json[period])
+            }
+            fake = _fake_yield_by_layer(fake_json[period], control_region=fake_control_region)
+
+            missing_layers = [
+                layer
+                for layer in _TOTAL_BACKGROUND_LAYER_ORDER
+                if layer not in muon or layer not in electron or layer not in tau or layer not in fake
+            ]
+            if missing_layers:
+                raise ValueError(
+                    f"run period {period!r} is missing layer bin(s) {missing_layers} "
+                    "in its muon/electron/tau/fake-track inputs"
+                )
+
+            if period_index > 0:
+                out.write(r"\hline" + "\n")
+            for layer_index, layer in enumerate(_TOTAL_BACKGROUND_LAYER_ORDER):
+                lepton_sum = _add_counts([muon[layer], electron[layer], tau[layer]])
+                spurious = fake[layer]
+                total = _add_counts([lepton_sum, spurious])
+                period_text = period if layer_index == 0 else ""
+                out.write(
+                    f"{period_text} & {_layer_label(layer)} & "
+                    f"{_format_tau_boundary(lepton_sum.value, lepton_sum.error)} & "
+                    f"{_format_tau_boundary(spurious.value, spurious.error)} & "
+                    f"{_format_tau_boundary(total.value, total.error)} \\\\\n"
+                )
+        out.write(r"\hline" + "\n")
+        out.write(r"\end{tabular}" + "\n")
         if include_table_env:
             out.write(r"\end{table}" + "\n")
