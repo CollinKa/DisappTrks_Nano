@@ -1,0 +1,21 @@
+{
+  "Signal_AMSB_Wino_M500_ctau100_2K_OSUNano": {
+    "files": [
+      "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/dev/SignalSim/2KEventQuickTest/nano_AMSB_Wino_M500GeV_ctau100cm_Run3Summer22.root"
+    ],
+    "metadata": {
+      "sample": "SIG_AMSB_Wino_M500_ctau100_2K",
+      "year": "2022_preEE",
+      "era": "preEE",
+      "isMC": "True",
+      "primaryDataset": "SignalSim",
+      "nevents": "0",
+      "nano_version": 12,
+      "xsec": 1.0,
+      "mass_GeV": 500,
+      "ctau_cm": 100,
+      "osu_version": 3,
+      "xsec_theory_pb": 0.0787
+    }
+  }
+}
