@@ -8,8 +8,6 @@ from pathlib import Path
 
 import numpy as np
 
-from .datasets import ERA_GROUPS
-
 
 MET_TRIGGER_FIELDS = (
     "MET105_IsoTrk50",
@@ -56,8 +54,18 @@ EOS_FIDUCIAL_MAP_DIR = (
 FIDUCIAL_MAP_VERSION = "v2"
 
 # Dataset ``year`` metadata -> the period label used in the map file names.
-# Derived from ERA_GROUPS so the two cannot drift apart.
-FIDUCIAL_MAP_ERAS = {group.metadata_year: group.label for group in ERA_GROUPS}
+# Spelled out rather than derived from ERA_GROUPS: this module is shipped to
+# Dask workers by value, where an intra-package import would fail because the
+# package itself is not importable there.  tests/test_fiducial_map_eras.py
+# checks this stays in step with ERA_GROUPS.
+FIDUCIAL_MAP_ERAS = {
+    "2022_preEE": "2022CD",
+    "2022_postEE": "2022EFG",
+    "2023_preBPix": "2023C",
+    "2023_postBPix": "2023D",
+    "2024": "2024",
+    "2025": "2025",
+}
 
 
 def _event_bool_like(events, value: bool):
