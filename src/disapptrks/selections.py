@@ -43,9 +43,53 @@ SIGNAL_MET_FILTER_FIELDS = (
     "eeBadScFilter",
 )
 
-DEFAULT_FIDUCIAL_MAP_DIR = Path(
-    "/uscms_data/d3/czheng/CMSSW_15_0_10/src/OSUT3Analysis/Configuration/data"
+MET_TRIGGER_FIELDS = (
+    "MET105_IsoTrk50",
+    "MET120_IsoTrk50",
+    "PFMET105_IsoTrk50",
+    "PFMET120_PFMHT120_IDTight",
+    "PFMET130_PFMHT130_IDTight",
+    "PFMET140_PFMHT140_IDTight",
+    "PFMETNoMu120_PFMHTNoMu120_IDTight",
+    "PFMETNoMu130_PFMHTNoMu130_IDTight",
+    "PFMETNoMu140_PFMHTNoMu140_IDTight",
+    "PFMETNoMu120_PFMHTNoMu120_IDTight_PFHT60",
+    "PFMETNoMu110_PFMHTNoMu110_IDTight_FilterHF",
+    "PFMETNoMu120_PFMHTNoMu120_IDTight_FilterHF",
+    "PFMETNoMu130_PFMHTNoMu130_IDTight_FilterHF",
+    "PFMETNoMu140_PFMHTNoMu140_IDTight_FilterHF",
+    "PFMET120_PFMHT120_IDTight_PFHT60",
+    "PFMETTypeOne120_PFMHT120_IDTight",
+    "PFMETTypeOne130_PFMHT130_IDTight",
+    "PFMETTypeOne140_PFMHT140_IDTight",
+    "PFMETTypeOne120_PFMHT120_IDTight_PFHT60",
 )
+
+SIGNAL_MET_FILTER_FIELDS = (
+    "HBHENoiseFilter",
+    "HBHENoiseIsoFilter",
+    "globalSuperTightHalo2016Filter",
+    "HcalStripHaloFilter",
+    "EcalDeadCellTriggerPrimitiveFilter",
+    "BadPFMuonFilter",
+    "BadPFMuonDzFilter",
+    "hfNoisyHitsFilter",
+    "eeBadScFilter",
+)
+
+# The group publishes one fiducial map per flavor per data-taking period.  They
+# are read straight from EOS over xrootd: LPC condor workers run the container
+# with ``--contain`` and bind only /cvmfs, /etc/hosts and /etc/grid-security, so
+# no POSIX /eos mount is reachable from a worker, but the shipped proxy makes
+# xrootd work everywhere.
+EOS_FIDUCIAL_MAP_DIR = (
+    "root://cmseos.fnal.gov//store/group/lpcdisapptrks/fiducialmaps"
+)
+FIDUCIAL_MAP_VERSION = "v2"
+
+# Dataset ``year`` metadata -> the period label used in the map file names.
+# Derived from ERA_GROUPS so the two cannot drift apart.
+FIDUCIAL_MAP_ERAS = {group.metadata_year: group.label for group in ERA_GROUPS}
 
 
 def _event_bool_like(events, value: bool):
@@ -121,63 +165,79 @@ def gen_lightest_chargino_mask(events, *, pdg_id: int = 1000024):
     return _event_bool_like(events, False)
 
 
+def _require_fiducial_maps() -> bool:
+    return os.environ.get("DISAPPTRKS_REQUIRE_FIDUCIAL_MAPS", "").lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
 def _fiducial_map_path(flavor: str):
-    override = os.environ.get(f"DISAPPTRKS_{flavor.upper()}_FIDUCIAL_MAP")
-    if override:
-        return Path(override)
-    base = Path(os.environ.get("DISAPPTRKS_FIDUCIAL_MAP_DIR", DEFAULT_FIDUCIAL_MAP_DIR))
-    return base / f"{flavor}FiducialMap_mc.root"
+    """Explicit local override, or None to resolve from EOS by era."""
+    env_path = os.environ.get(f"DISAPPTRKS_{flavor.upper()}_FIDUCIAL_MAP_JSON")
+    if env_path:
+        return Path(env_path)
+    env_dir = os.environ.get("DISAPPTRKS_FIDUCIAL_MAP_DIR")
+    if env_dir:
+        return Path(env_dir) / f"{flavor}_fiducial_map.json"
+    return None
+
+
+def _hot_spots_from_payload(payload) -> tuple:
+    return tuple(
+        (float(spot["eta"]), float(spot["phi"]), float(spot["radius"]))
+        for spot in payload.get("hot_spots", ())
+    )
 
 
 @lru_cache(maxsize=None)
-def _fiducial_hot_spots(path: str, before_name="beforeVeto", after_name="afterVeto", threshold=2.0):
-    import uproot
+def _local_fiducial_hot_spots(path: str) -> tuple:
+    import json
 
     path_obj = Path(path)
     if not path_obj.exists():
+        if _require_fiducial_maps():
+            raise FileNotFoundError(f"Fiducial map not found: {path}")
         return ()
-    with uproot.open(str(path_obj)) as root_file:
-        before, x_edges, y_edges = root_file[before_name].to_numpy()
-        after, after_x_edges, after_y_edges = root_file[after_name].to_numpy()
+    with path_obj.open(encoding="utf-8") as handle:
+        return _hot_spots_from_payload(json.load(handle))
 
-    if not np.allclose(x_edges, after_x_edges) or not np.allclose(y_edges, after_y_edges):
-        raise ValueError(f"{path}: before/after fiducial histograms have different binning")
 
-    occupied = before > 0.0
-    if not np.any(occupied):
+def _load_fiducial_hot_spots(flavor: str) -> tuple:
+    """Hot spots for one flavor, from the configured map path.
+
+    Without DISAPPTRKS_REQUIRE_FIDUCIAL_MAPS a resolution failure returns no hot
+    spots, which silently disables the veto -- set it for anything whose yields
+    matter.
+    """
+    path = _fiducial_map_path(flavor)
+    if path is not None:
+        hot_spots = _local_fiducial_hot_spots(str(path))
+        source = str(path)
+    else:
+        if _require_fiducial_maps():
+            raise FileNotFoundError(
+                f"No fiducial-map path configured for {flavor}. Set "
+                f"DISAPPTRKS_{flavor.upper()}_FIDUCIAL_MAP_JSON or "
+                "DISAPPTRKS_FIDUCIAL_MAP_DIR."
+            )
         return ()
 
-    inefficiency = np.zeros_like(after, dtype=float)
-    inefficiency[occupied] = after[occupied] / before[occupied]
-    mean = float(np.sum(after[occupied]) / np.sum(before[occupied]))
-    n_occupied = int(np.count_nonzero(occupied))
-    if n_occupied < 2:
-        return ()
-    stddev = float(np.sqrt(np.sum((inefficiency[occupied] - mean) ** 2) / (n_occupied - 1)))
-    if stddev == 0.0:
-        return ()
-
-    hot_spots = []
-    for ix, iy in np.argwhere(occupied):
-        excess = inefficiency[ix, iy] - mean
-        if excess <= float(threshold) * stddev:
-            continue
-        eta = float(0.5 * (x_edges[ix] + x_edges[ix + 1]))
-        phi = float(0.5 * (y_edges[iy] + y_edges[iy + 1]))
-        radius = float(np.hypot(0.5 * (x_edges[ix + 1] - x_edges[ix]), 0.5 * (y_edges[iy + 1] - y_edges[iy])))
-        hot_spots.append((eta, phi, radius))
-    return tuple(hot_spots)
+    if not hot_spots and _require_fiducial_maps():
+        raise ValueError(f"Fiducial map {source} has no hot spots")
+    return hot_spots
 
 
-def _fiducial_map_mask(tracks, path, *, min_delta_r=0.05):
+def _fiducial_map_mask(tracks, hot_spots):
+    """Veto tracks inside a hot spot.  Radii come from the map, with no floor."""
     import awkward as ak
 
     mask = ak.ones_like(tracks.eta, dtype=bool)
-    if path is None:
-        return mask
-    for eta, phi, radius in _fiducial_hot_spots(str(path)):
+    for eta, phi, radius in hot_spots:
         dr = np.sqrt((tracks.eta - eta) ** 2 + delta_phi(tracks.phi, phi) ** 2)
-        mask = mask & (dr >= max(float(min_delta_r), radius))
+        mask = mask & (dr > radius)
     return mask
 
 
@@ -479,13 +539,17 @@ def add_isotrack_derived_fields(events):
     if "isFiducialElectronTrack" not in tracks.fields:
         tracks = ak.with_field(
             tracks,
-            _fiducial_map_mask(tracks, _fiducial_map_path("electron")),
+            _fiducial_map_mask(
+                tracks, _load_fiducial_hot_spots("electron")
+            ),
             "isFiducialElectronTrack",
         )
     if "isFiducialMuonTrack" not in tracks.fields:
         tracks = ak.with_field(
             tracks,
-            _fiducial_map_mask(tracks, _fiducial_map_path("muon")),
+            _fiducial_map_mask(
+                tracks, _load_fiducial_hot_spots("muon")
+            ),
             "isFiducialMuonTrack",
         )
     raw_calo_energy = tracks.caloEm + tracks.caloHad
