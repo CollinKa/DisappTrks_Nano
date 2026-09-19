@@ -8,40 +8,8 @@ from pathlib import Path
 
 import numpy as np
 
+from .datasets import ERA_GROUPS
 
-MET_TRIGGER_FIELDS = (
-    "MET105_IsoTrk50",
-    "MET120_IsoTrk50",
-    "PFMET105_IsoTrk50",
-    "PFMET120_PFMHT120_IDTight",
-    "PFMET130_PFMHT130_IDTight",
-    "PFMET140_PFMHT140_IDTight",
-    "PFMETNoMu120_PFMHTNoMu120_IDTight",
-    "PFMETNoMu130_PFMHTNoMu130_IDTight",
-    "PFMETNoMu140_PFMHTNoMu140_IDTight",
-    "PFMETNoMu120_PFMHTNoMu120_IDTight_PFHT60",
-    "PFMETNoMu110_PFMHTNoMu110_IDTight_FilterHF",
-    "PFMETNoMu120_PFMHTNoMu120_IDTight_FilterHF",
-    "PFMETNoMu130_PFMHTNoMu130_IDTight_FilterHF",
-    "PFMETNoMu140_PFMHTNoMu140_IDTight_FilterHF",
-    "PFMET120_PFMHT120_IDTight_PFHT60",
-    "PFMETTypeOne120_PFMHT120_IDTight",
-    "PFMETTypeOne130_PFMHT130_IDTight",
-    "PFMETTypeOne140_PFMHT140_IDTight",
-    "PFMETTypeOne120_PFMHT120_IDTight_PFHT60",
-)
-
-SIGNAL_MET_FILTER_FIELDS = (
-    "HBHENoiseFilter",
-    "HBHENoiseIsoFilter",
-    "globalSuperTightHalo2016Filter",
-    "HcalStripHaloFilter",
-    "EcalDeadCellTriggerPrimitiveFilter",
-    "BadPFMuonFilter",
-    "BadPFMuonDzFilter",
-    "hfNoisyHitsFilter",
-    "eeBadScFilter",
-)
 
 MET_TRIGGER_FIELDS = (
     "MET105_IsoTrk50",
@@ -174,6 +142,19 @@ def _require_fiducial_maps() -> bool:
     )
 
 
+def _fiducial_map_era(year, era=None):
+    """Return the map period label ("2022CD", ...) for a dataset year/era."""
+    if not year:
+        return None
+    key = str(year)
+    if key in FIDUCIAL_MAP_ERAS:
+        return FIDUCIAL_MAP_ERAS[key]
+    # Legacy/bare-year metadata such as year="2022", era="CD".
+    if era and f"{key}{era}" in FIDUCIAL_MAP_ERAS.values():
+        return f"{key}{era}"
+    return key
+
+
 def _fiducial_map_path(flavor: str):
     """Explicit local override, or None to resolve from EOS by era."""
     env_path = os.environ.get(f"DISAPPTRKS_{flavor.upper()}_FIDUCIAL_MAP_JSON")
@@ -205,8 +186,29 @@ def _local_fiducial_hot_spots(path: str) -> tuple:
         return _hot_spots_from_payload(json.load(handle))
 
 
-def _load_fiducial_hot_spots(flavor: str) -> tuple:
-    """Hot spots for one flavor, from the configured map path.
+@lru_cache(maxsize=None)
+def _eos_fiducial_hot_spots(flavor: str, map_era: str) -> tuple:
+    """Read one published map from the group's EOS space over xrootd."""
+    import json
+
+    import fsspec
+
+    url = (
+        f"{EOS_FIDUCIAL_MAP_DIR}/"
+        f"{flavor}_fiducial_map_{map_era}_{FIDUCIAL_MAP_VERSION}.json"
+    )
+    try:
+        with fsspec.open(url) as handle:
+            payload = json.load(handle)
+    except Exception as error:  # xrootd failure, missing era, expired proxy
+        if _require_fiducial_maps():
+            raise RuntimeError(f"Could not read fiducial map {url}: {error}") from error
+        return ()
+    return _hot_spots_from_payload(payload)
+
+
+def _load_fiducial_hot_spots(flavor: str, year=None, era=None) -> tuple:
+    """Hot spots for one flavor: explicit override first, else EOS by era.
 
     Without DISAPPTRKS_REQUIRE_FIDUCIAL_MAPS a resolution failure returns no hot
     spots, which silently disables the veto -- set it for anything whose yields
@@ -217,13 +219,17 @@ def _load_fiducial_hot_spots(flavor: str) -> tuple:
         hot_spots = _local_fiducial_hot_spots(str(path))
         source = str(path)
     else:
-        if _require_fiducial_maps():
-            raise FileNotFoundError(
-                f"No fiducial-map path configured for {flavor}. Set "
-                f"DISAPPTRKS_{flavor.upper()}_FIDUCIAL_MAP_JSON or "
-                "DISAPPTRKS_FIDUCIAL_MAP_DIR."
-            )
-        return ()
+        map_era = _fiducial_map_era(year, era)
+        if map_era is None:
+            if _require_fiducial_maps():
+                raise ValueError(
+                    f"No dataset year given, so the {flavor} fiducial map cannot be "
+                    f"resolved. Set DISAPPTRKS_{flavor.upper()}_FIDUCIAL_MAP_JSON or "
+                    "DISAPPTRKS_FIDUCIAL_MAP_DIR."
+                )
+            return ()
+        hot_spots = _eos_fiducial_hot_spots(flavor, map_era)
+        source = f"EOS {map_era}"
 
     if not hot_spots and _require_fiducial_maps():
         raise ValueError(f"Fiducial map {source} has no hot spots")
@@ -517,7 +523,7 @@ def layer_mask(tracks, layer: str):
     raise ValueError(f"unknown layer bin: {layer}")
 
 
-def add_isotrack_derived_fields(events):
+def add_isotrack_derived_fields(events, *, year=None, era=None):
     """Attach transparent analysis quantities to the ``IsoTrack`` collection."""
     import awkward as ak
 
@@ -540,7 +546,7 @@ def add_isotrack_derived_fields(events):
         tracks = ak.with_field(
             tracks,
             _fiducial_map_mask(
-                tracks, _load_fiducial_hot_spots("electron")
+                tracks, _load_fiducial_hot_spots("electron", year=year, era=era)
             ),
             "isFiducialElectronTrack",
         )
@@ -548,7 +554,7 @@ def add_isotrack_derived_fields(events):
         tracks = ak.with_field(
             tracks,
             _fiducial_map_mask(
-                tracks, _load_fiducial_hot_spots("muon")
+                tracks, _load_fiducial_hot_spots("muon", year=year, era=era)
             ),
             "isFiducialMuonTrack",
         )

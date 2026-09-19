@@ -468,7 +468,9 @@ class DisappTrksProcessor(BaseProcessorABC):
 
     def apply_object_preselection(self, variation):
         self.events["Muon"] = add_muon_derived_fields(self.events)
-        self.events["IsoTrack"] = add_isotrack_derived_fields(self.events)
+        self.events["IsoTrack"] = add_isotrack_derived_fields(
+            self.events, year=self._year, era=self._era
+        )
         self.events["AnalysisEvent"] = add_event_derived_fields(self.events)
         tag_met = _met_for_transverse_mass(self.events)
         self.events["MuonTag"] = self.events.Muon[muon_tag_mask(self.events.Muon)]
