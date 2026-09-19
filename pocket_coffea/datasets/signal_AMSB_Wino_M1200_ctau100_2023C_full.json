@@ -1,0 +1,32 @@
+{
+  "Signal_AMSB_Wino_M1200_ctau100_2023C_full_OSUNano": {
+    "files": [
+      "root://cmseosmgm01.fnal.gov:1094//store/group/lpcdisapptrks/nano/dev/SignalSim/withLifeTime/AMSB_Wino_M1200GeV_ctau100cm_TuneCP5_13p6TeV_madgraph-pythia8/AMSB_Wino_M1200GeV_ctau100cm_TuneCP5_13p6TeV_madgraph-pythia8_Run3Summer23MiniAODv4_charginoOnly_customNanoAOD_OSUv3/260919_003449/0000/osunano_custom_charginoOnly_1.root",
+      "root://cmseosmgm01.fnal.gov:1094//store/group/lpcdisapptrks/nano/dev/SignalSim/withLifeTime/AMSB_Wino_M1200GeV_ctau100cm_TuneCP5_13p6TeV_madgraph-pythia8/AMSB_Wino_M1200GeV_ctau100cm_TuneCP5_13p6TeV_madgraph-pythia8_Run3Summer23MiniAODv4_charginoOnly_customNanoAOD_OSUv3/260919_003449/0000/osunano_custom_charginoOnly_10.root",
+      "root://cmseosmgm01.fnal.gov:1094//store/group/lpcdisapptrks/nano/dev/SignalSim/withLifeTime/AMSB_Wino_M1200GeV_ctau100cm_TuneCP5_13p6TeV_madgraph-pythia8/AMSB_Wino_M1200GeV_ctau100cm_TuneCP5_13p6TeV_madgraph-pythia8_Run3Summer23MiniAODv4_charginoOnly_customNanoAOD_OSUv3/260919_003449/0000/osunano_custom_charginoOnly_2.root",
+      "root://cmseosmgm01.fnal.gov:1094//store/group/lpcdisapptrks/nano/dev/SignalSim/withLifeTime/AMSB_Wino_M1200GeV_ctau100cm_TuneCP5_13p6TeV_madgraph-pythia8/AMSB_Wino_M1200GeV_ctau100cm_TuneCP5_13p6TeV_madgraph-pythia8_Run3Summer23MiniAODv4_charginoOnly_customNanoAOD_OSUv3/260919_003449/0000/osunano_custom_charginoOnly_3.root",
+      "root://cmseosmgm01.fnal.gov:1094//store/group/lpcdisapptrks/nano/dev/SignalSim/withLifeTime/AMSB_Wino_M1200GeV_ctau100cm_TuneCP5_13p6TeV_madgraph-pythia8/AMSB_Wino_M1200GeV_ctau100cm_TuneCP5_13p6TeV_madgraph-pythia8_Run3Summer23MiniAODv4_charginoOnly_customNanoAOD_OSUv3/260919_003449/0000/osunano_custom_charginoOnly_4.root",
+      "root://cmseosmgm01.fnal.gov:1094//store/group/lpcdisapptrks/nano/dev/SignalSim/withLifeTime/AMSB_Wino_M1200GeV_ctau100cm_TuneCP5_13p6TeV_madgraph-pythia8/AMSB_Wino_M1200GeV_ctau100cm_TuneCP5_13p6TeV_madgraph-pythia8_Run3Summer23MiniAODv4_charginoOnly_customNanoAOD_OSUv3/260919_003449/0000/osunano_custom_charginoOnly_5.root",
+      "root://cmseosmgm01.fnal.gov:1094//store/group/lpcdisapptrks/nano/dev/SignalSim/withLifeTime/AMSB_Wino_M1200GeV_ctau100cm_TuneCP5_13p6TeV_madgraph-pythia8/AMSB_Wino_M1200GeV_ctau100cm_TuneCP5_13p6TeV_madgraph-pythia8_Run3Summer23MiniAODv4_charginoOnly_customNanoAOD_OSUv3/260919_003449/0000/osunano_custom_charginoOnly_6.root",
+      "root://cmseosmgm01.fnal.gov:1094//store/group/lpcdisapptrks/nano/dev/SignalSim/withLifeTime/AMSB_Wino_M1200GeV_ctau100cm_TuneCP5_13p6TeV_madgraph-pythia8/AMSB_Wino_M1200GeV_ctau100cm_TuneCP5_13p6TeV_madgraph-pythia8_Run3Summer23MiniAODv4_charginoOnly_customNanoAOD_OSUv3/260919_003449/0000/osunano_custom_charginoOnly_7.root",
+      "root://cmseosmgm01.fnal.gov:1094//store/group/lpcdisapptrks/nano/dev/SignalSim/withLifeTime/AMSB_Wino_M1200GeV_ctau100cm_TuneCP5_13p6TeV_madgraph-pythia8/AMSB_Wino_M1200GeV_ctau100cm_TuneCP5_13p6TeV_madgraph-pythia8_Run3Summer23MiniAODv4_charginoOnly_customNanoAOD_OSUv3/260919_003449/0000/osunano_custom_charginoOnly_8.root",
+      "root://cmseosmgm01.fnal.gov:1094//store/group/lpcdisapptrks/nano/dev/SignalSim/withLifeTime/AMSB_Wino_M1200GeV_ctau100cm_TuneCP5_13p6TeV_madgraph-pythia8/AMSB_Wino_M1200GeV_ctau100cm_TuneCP5_13p6TeV_madgraph-pythia8_Run3Summer23MiniAODv4_charginoOnly_customNanoAOD_OSUv3/260919_003449/0000/osunano_custom_charginoOnly_9.root"
+    ],
+    "metadata": {
+      "sample": "SIG_AMSB_Wino_M1200_ctau100_2023C_full",
+      "year": "2023_preBPix",
+      "era": "C",
+      "isMC": "True",
+      "primaryDataset": "SignalSim",
+      "nevents": "0",
+      "nano_version": 12,
+      "xsec": 1.0,
+      "mass_GeV": 1200,
+      "ctau_cm": 100,
+      "osu_version": 3,
+      "era_group": "2023C",
+      "nfiles": 10,
+      "xsec_theory_pb": 0.000771
+    }
+  }
+}
