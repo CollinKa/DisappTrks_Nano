@@ -617,6 +617,17 @@ has_disappearing_track = Cut(
     function=_has_disappearing_track,
 )
 
+# The same requirement restricted to one tracker-layer signal-region bin. The
+# three bins are exclusive and together reproduce has_disappearing_track.
+search_layer_cuts = {
+    f"search_layers{suffix}": Cut(
+        name=f"has_disappearing_track_layers{suffix}",
+        params={"field": f"nIsoTrackSearchNLayers{suffix}", "minimum": 1},
+        function=_has_count,
+    )
+    for suffix in ("4", "5", "6plus")
+}
+
 golden_json_lumi = Cut(
     name="golden_json_lumi",
     params={},

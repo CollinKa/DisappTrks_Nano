@@ -37,6 +37,7 @@ from cuts import (
     muon_pveto_layer_cuts,
     search_diagnostic_cuts,
     search_kinematics,
+    search_layer_cuts,
     tau_pveto_diagnostic_cuts,
 )
 from cuts import (
@@ -214,6 +215,11 @@ common_categories = {
     "inclusive": [passthrough],
     "search": [search_kinematics, has_disappearing_track],
 }
+# The search region split by tracker-layer bin, so signal yields can be paired
+# with the per-bin background estimates. Their sum reproduces "search".
+search_layer_categories = {
+    name: [search_kinematics, cut] for name, cut in search_layer_cuts.items()
+}
 muon_pveto_categories = {
     "muon_veto_tag": [has_muon_tag],
     "muon_veto_probe": [has_muon_tag, has_muon_veto_probe_track],
@@ -274,6 +280,7 @@ elif category_mode == "fake_tracks":
 elif category_mode in ("signal_search", "signal_sim"):
     selected_categories = {
         **common_categories,
+        **search_layer_categories,
     }
 elif category_mode == "figure1":
     selected_categories = {
@@ -284,6 +291,7 @@ elif category_mode == "figure1":
 elif category_mode == "all":
     selected_categories = {
         **common_categories,
+        **search_layer_categories,
         **muon_pveto_categories,
         **lepton_pveto_categories,
         **fake_track_categories,

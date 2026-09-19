@@ -654,6 +654,12 @@ class DisappTrksProcessor(BaseProcessorABC):
         self.events["IsoTrackSearch"] = self.events.IsoTrack[
             search_track_mask(self.events.IsoTrack)
         ]
+        # The same full search selection, split into the three signal-region
+        # bins. They are exclusive in tracker layers and add up to IsoTrackSearch.
+        for layer in PVETO_LAYERS:
+            self.events[f"IsoTrackSearch{layer}"] = self.events.IsoTrack[
+                search_track_mask(self.events.IsoTrack, layer=layer)
+            ]
 
     def count_objects(self, variation):
         self.events["nIsoTrack"] = ak.num(self.events.IsoTrack)
@@ -769,6 +775,10 @@ class DisappTrksProcessor(BaseProcessorABC):
             self.events.IsoTrackSearchPreLeptonVeto
         )
         self.events["nIsoTrackSearch"] = ak.num(self.events.IsoTrackSearch)
+        for layer in PVETO_LAYERS:
+            self.events[f"nIsoTrackSearch{layer}"] = ak.num(
+                self.events[f"IsoTrackSearch{layer}"]
+            )
 
         fake_basic3hits_d0_signal = self.events.IsoTrack[
             fake_track_no_d0_mask(
