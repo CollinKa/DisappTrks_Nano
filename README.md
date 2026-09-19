@@ -43,6 +43,57 @@ The command uses `xrdfs root://cmseos.fnal.gov ls -u` so the output JSON gets
 full XRootD file URLs. If you already have a text filelist, pass it with
 `--filelist` instead of an EOS path.
 
+For a signal-MC directory, the same command can write all required MC metadata
+and calculate the exact event count directly from the ROOT `Events` trees:
+
+```bash
+disapptrks make-dataset-json /store/user/YOUR_SIGNAL_PATH \
+  --recursive \
+  --dataset-name Chargino700_EOS \
+  --sample SIGNAL_Chargino \
+  --year 2022_postEE \
+  --era EFG \
+  --primary-dataset Signal \
+  --is-mc \
+  --xsec 1.0 \
+  --count-events \
+  --nano-version 12 \
+  -o pocket_coffea/datasets/eos_chargino_700.json
+```
+
+Run it once per independent mass/lifetime point so each point has its own
+dataset key and acceptance result. A physical cross section may replace 1.0
+when normalized yields are also needed.
+
+When all points live below one `SignalSim` directory, make the complete JSON in
+one invocation. The directory immediately below `SignalSim` becomes the dataset
+key, and `nevents` is counted separately for every point:
+
+```bash
+disapptrks make-dataset-json \
+  /store/group/lpcdisapptrks/nano/dev/SignalSim \
+  --recursive \
+  --group-signal-points \
+  --sample SIGNAL_Chargino \
+  --year 2022_postEE \
+  --era EFG \
+  --primary-dataset Signal \
+  --is-mc \
+  --xsec 1.0 \
+  --count-events \
+  --event-count-workers 12 \
+  --nano-version 12 \
+  --xrootd root://cmseosmgm01.fnal.gov:1094 \
+  -o pocket_coffea/datasets/eos_signal_2022_postEE.json
+```
+
+If the signal-point directories instead live directly below another parent,
+such as `dev_v2/<signal-point>`, pass `--signal-marker dev_v2` while keeping
+`--group-signal-points`.
+
+The shared `xsec=1.0` is appropriate for acceptance comparisons. Use physical,
+point-dependent cross sections before interpreting normalized signal yields.
+
 ## PocketCoffea setup
 
 Install this analysis and the recommended PocketCoffea release in one
@@ -187,10 +238,115 @@ This writes `tau_mu_cutflow.tex`, `tau_mu_pveto.tex`, `tau_ele_cutflow.tex`,
 `tau_ele_pveto.tex`, and `tau_pveto_combined.tex` under
 `tables/tau_pveto/<year>/`.
 
+## Standard LPC Dask launcher
+
+Run the production-style Dask command from `pocket_coffea` through the naming
+wrapper:
+
+```bash
+cd pocket_coffea
+DISAPPTRKS_CATEGORY_MODE=electron_pveto \
+DISAPPTRKS_REQUIRE_FIDUCIAL_MAPS=1 \
+DISAPPTRKS_ELECTRON_FIDUCIAL_MAP_JSON=data/fiducial_maps/electron_fiducial_map_2022CD_v2.json \
+DISAPPTRKS_DATASET_JSON=datasets/eos_2022CD_EGamma.json \
+DISAPPTRKS_DATASET_SAMPLE=DATA_EGamma \
+DISAPPTRKS_DATASET_YEAR=2022_preEE \
+  scripts/run_lpc_dask.sh --scaleout 200 --skip-bad-files
+```
+
+The launcher infers the data-taking period from the dataset JSON and writes to
+`analysis_output/<period>/<category-mode>`. The example above therefore writes
+to `analysis_output/2022CD/electron_pveto`. Runner arguments are passed through
+unchanged. Set `DISAPPTRKS_OUTPUT_PERIOD` only when the period cannot be inferred.
+For a non-canonical test output, set `DISAPPTRKS_OUTPUT_VARIANT`, for example
+`newmap`; this adds a final, consistently placed directory component.
+
+Completed top-level `.coffea` outputs are copied to the LPC group area by
+default:
+
+```text
+root://cmseos.fnal.gov//store/group/lpcdisapptrks/disapptrks_output/<period>/<category-mode>
+```
+
+Set `DISAPPTRKS_COPY_TO_EOS=0` to disable the copy for a smoke test. The base
+can be overridden with `DISAPPTRKS_EOS_OUTPUT_BASE` when needed.
+
+### Standard fake-track estimate
+
+After the `basic`, `zmumu`, and `zee` fake-track modes finish for a period, make
+both control-region estimates and the combined table with:
+
+```bash
+disapptrks make-standard-fake-track-estimate --run-period 2022CD
+```
+
+This reads `analysis_output/2022CD/fake_tracks/{basic,zmumu,zee}/` and writes
+consistently named JSON and LaTeX products under `tables/fake_tracks/2022CD/`.
+If `output_all.coffea` exists, it is preferred over `output_job_*.coffea`
+shards to avoid double counting. Nonstandard inputs can be supplied with
+`--basic-files`, `--zmumu-files`, and `--zee-files`; use `--input-base` or
+`--output-dir` to override the corresponding base paths.
+
+The standardized command fits the transfer factor from each control output by
+default. Use `--transfer-factor-source fixed` only to reproduce the stored
+AN Section-5.2 values, or add `--fit-plots` to save the default fit plots.
+
+Multiple periods can be processed together:
+
+```bash
+disapptrks make-standard-fake-track-estimate \
+  --run-period 2022CD 2022EFG 2023C 2023D
+```
+
+This retains the per-period products and also writes the combined table
+`tables/fake_tracks/table34_combined.tex`. Explicit per-control file overrides
+are limited to single-period invocations.
+
+### Standard tau-background estimate
+
+After the tau production modes finish, the standardized estimator resolves
+their paths automatically. For one period:
+
+```bash
+disapptrks make-standard-tau-background \
+  --run-period 2022CD \
+  --trigger-efficiency 0.90 \
+  --trigger-efficiency-error 0.006
+```
+
+This reads the top-level coffea output from:
+
+```text
+analysis_output/2022CD/tau_mu_pveto/
+analysis_output/2022CD/tau_ele_pveto/
+analysis_output/2022CD/tau_pmiss_poffline/
+analysis_output/2022CD/tau_trigger_probability/
+```
+
+and writes `tau_background.json` and `tau_background.tex` under
+`tables/tau_background/2022CD/`. The trigger efficiency remains explicit
+because it is a physics input rather than a directory convention.
+
+For multiple periods, provide period-qualified efficiencies:
+
+```bash
+disapptrks make-standard-tau-background \
+  --run-period 2022CD 2022EFG 2023C 2023D \
+  --trigger-efficiency \
+    2022CD=0.90 2022EFG=0.91 2023C=0.92 2023D=0.93 \
+  --trigger-efficiency-error \
+    2022CD=0.006 2022EFG=0.006 2023C=0.007 2023D=0.007
+```
+
+In addition to the per-period products, this writes
+`tables/tau_background/tau_background_combined.tex`. For a nonstandard
+single-period run, override individual inputs with `--tau-control-files`,
+`--tau-mu-files`, `--tau-ele-files`, or `--tau-probability-files`.
+
 ## LPC manual Condor fallback
 
 If Dask/lpcjobqueue is unavailable, the v2-style wrapper in
-`pocket_coffea/scripts` remains as a fallback.  The Condor worker runs in a
+`pocket_coffea/scripts` remains as a fallback. The Condor worker runs in a
 sandbox, so it does not depend on `/uscms` or `/uscms_data` paths being mounted
 inside the job.
 
@@ -258,6 +414,10 @@ assumed to be embedded in a separate track table.
 
 See [MIGRATION.md](MIGRATION.md) for the source-to-PocketCoffea mapping and
 validation sequence.
+
+For collaborator-facing details on PocketCoffea category modes, where to edit
+cuts, and a step-by-step muon Pveto workflow, see
+[docs/pocket_coffea_workflows.md](docs/pocket_coffea_workflows.md).
 
 Run unit tests with:
 

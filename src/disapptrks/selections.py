@@ -2,261 +2,35 @@
 
 from __future__ import annotations
 
-import os
-from functools import lru_cache
-from pathlib import Path
-
 import numpy as np
-
-
-MET_TRIGGER_FIELDS = (
-    "MET105_IsoTrk50",
-    "MET120_IsoTrk50",
-    "PFMET105_IsoTrk50",
-    "PFMET120_PFMHT120_IDTight",
-    "PFMET130_PFMHT130_IDTight",
-    "PFMET140_PFMHT140_IDTight",
-    "PFMETNoMu120_PFMHTNoMu120_IDTight",
-    "PFMETNoMu130_PFMHTNoMu130_IDTight",
-    "PFMETNoMu140_PFMHTNoMu140_IDTight",
-    "PFMETNoMu120_PFMHTNoMu120_IDTight_PFHT60",
-    "PFMETNoMu110_PFMHTNoMu110_IDTight_FilterHF",
-    "PFMETNoMu120_PFMHTNoMu120_IDTight_FilterHF",
-    "PFMETNoMu130_PFMHTNoMu130_IDTight_FilterHF",
-    "PFMETNoMu140_PFMHTNoMu140_IDTight_FilterHF",
-    "PFMET120_PFMHT120_IDTight_PFHT60",
-    "PFMETTypeOne120_PFMHT120_IDTight",
-    "PFMETTypeOne130_PFMHT130_IDTight",
-    "PFMETTypeOne140_PFMHT140_IDTight",
-    "PFMETTypeOne120_PFMHT120_IDTight_PFHT60",
-)
-
-SIGNAL_MET_FILTER_FIELDS = (
-    "HBHENoiseFilter",
-    "HBHENoiseIsoFilter",
-    "globalSuperTightHalo2016Filter",
-    "HcalStripHaloFilter",
-    "EcalDeadCellTriggerPrimitiveFilter",
-    "BadPFMuonFilter",
-    "BadPFMuonDzFilter",
-    "hfNoisyHitsFilter",
-    "eeBadScFilter",
-)
-
-# The group publishes one fiducial map per flavor per data-taking period.  They
-# are read straight from EOS over xrootd: LPC condor workers run the container
-# with ``--contain`` and bind only /cvmfs, /etc/hosts and /etc/grid-security, so
-# no POSIX /eos mount is reachable from a worker, but the shipped proxy makes
-# xrootd work everywhere.
-EOS_FIDUCIAL_MAP_DIR = (
-    "root://cmseos.fnal.gov//store/group/lpcdisapptrks/fiducialmaps"
-)
-FIDUCIAL_MAP_VERSION = "v2"
-
-# Dataset ``year`` metadata -> the period label used in the map file names.
-# Spelled out rather than derived from ERA_GROUPS: this module is shipped to
-# Dask workers by value, where an intra-package import would fail because the
-# package itself is not importable there.  tests/test_fiducial_map_eras.py
-# checks this stays in step with ERA_GROUPS.
-FIDUCIAL_MAP_ERAS = {
-    "2022_preEE": "2022CD",
-    "2022_postEE": "2022EFG",
-    "2023_preBPix": "2023C",
-    "2023_postBPix": "2023D",
-    "2024": "2024",
-    "2025": "2025",
-}
-
-
-def _event_bool_like(events, value: bool):
-    import awkward as ak
-
-    for field in ("event", "run", "luminosityBlock"):
-        if field in events.fields:
-            template = events[field]
-            return ak.ones_like(template, dtype=bool) if value else ak.zeros_like(template, dtype=bool)
-    if "HLT" in events.fields and len(events.HLT.fields) > 0:
-        template = events.HLT[events.HLT.fields[0]]
-        return ak.ones_like(template, dtype=bool) if value else ak.zeros_like(template, dtype=bool)
-    raise ValueError("cannot build an event-shaped boolean mask")
-
-
-def _branch_mask(events, collection: str, field: str, *, default: bool = True):
-    if collection in events.fields and field in events[collection].fields:
-        return events[collection][field]
-    flat_name = f"{collection}_{field}"
-    if flat_name in events.fields:
-        return events[flat_name]
-    return _event_bool_like(events, default)
-
-
-def _hlt_or_mask(events, fields=MET_TRIGGER_FIELDS):
-    mask = _event_bool_like(events, False)
-    for field in fields:
-        if "HLT" in events.fields and field in events.HLT.fields:
-            mask = mask | events.HLT[field]
-        elif f"HLT_{field}" in events.fields:
-            mask = mask | events[f"HLT_{field}"]
-    return mask
-
-
-def _signal_met_filters_mask(events):
-    mask = _event_bool_like(events, True)
-    found = False
-    for field in SIGNAL_MET_FILTER_FIELDS:
-        in_collection = "Flag" in events.fields and field in events.Flag.fields
-        flat_name = f"Flag_{field}"
-        if in_collection or flat_name in events.fields:
-            mask = mask & _branch_mask(events, "Flag", field)
-            found = True
-    if found:
-        return mask
-    return _branch_mask(events, "Flag", "METFilters")
-
-
-def _ecal_bad_calib_filter_mask(events):
-    return _branch_mask(events, "Flag", "ecalBadCalibFilter")
-
-
-def _good_primary_vertex_mask(events):
-    if "Flag" in events.fields and "goodVertices" in events.Flag.fields:
-        return events.Flag.goodVertices
-    if "Flag_goodVertices" in events.fields:
-        return events.Flag_goodVertices
-    if "PV" in events.fields and "npvsGood" in events.PV.fields:
-        return events.PV.npvsGood > 0
-    if "PV_npvsGood" in events.fields:
-        return events.PV_npvsGood > 0
-    return _event_bool_like(events, True)
-
-
-def gen_lightest_chargino_mask(events, *, pdg_id: int = 1000024):
-    """Return events containing at least one lightest chargino GenPart."""
-    import awkward as ak
-
-    if "GenPart" in events.fields and "pdgId" in events.GenPart.fields:
-        return ak.any(abs(events.GenPart.pdgId) == pdg_id, axis=1)
-    if "GenPart_pdgId" in events.fields:
-        return ak.any(abs(events.GenPart_pdgId) == pdg_id, axis=1)
-    return _event_bool_like(events, False)
-
-
-def _require_fiducial_maps() -> bool:
-    return os.environ.get("DISAPPTRKS_REQUIRE_FIDUCIAL_MAPS", "").lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
-    )
-
-
-def _fiducial_map_era(year, era=None):
-    """Return the map period label ("2022CD", ...) for a dataset year/era."""
-    if not year:
-        return None
-    key = str(year)
-    if key in FIDUCIAL_MAP_ERAS:
-        return FIDUCIAL_MAP_ERAS[key]
-    # Legacy/bare-year metadata such as year="2022", era="CD".
-    if era and f"{key}{era}" in FIDUCIAL_MAP_ERAS.values():
-        return f"{key}{era}"
-    return key
-
-
-def _fiducial_map_path(flavor: str):
-    """Explicit local override, or None to resolve from EOS by era."""
-    env_path = os.environ.get(f"DISAPPTRKS_{flavor.upper()}_FIDUCIAL_MAP_JSON")
-    if env_path:
-        return Path(env_path)
-    env_dir = os.environ.get("DISAPPTRKS_FIDUCIAL_MAP_DIR")
-    if env_dir:
-        return Path(env_dir) / f"{flavor}_fiducial_map.json"
-    return None
-
-
-def _hot_spots_from_payload(payload) -> tuple:
-    return tuple(
-        (float(spot["eta"]), float(spot["phi"]), float(spot["radius"]))
-        for spot in payload.get("hot_spots", ())
-    )
-
-
-@lru_cache(maxsize=None)
-def _local_fiducial_hot_spots(path: str) -> tuple:
-    import json
-
-    path_obj = Path(path)
-    if not path_obj.exists():
-        if _require_fiducial_maps():
-            raise FileNotFoundError(f"Fiducial map not found: {path}")
-        return ()
-    with path_obj.open(encoding="utf-8") as handle:
-        return _hot_spots_from_payload(json.load(handle))
-
-
-@lru_cache(maxsize=None)
-def _eos_fiducial_hot_spots(flavor: str, map_era: str) -> tuple:
-    """Read one published map from the group's EOS space over xrootd."""
-    import json
-
-    import fsspec
-
-    url = (
-        f"{EOS_FIDUCIAL_MAP_DIR}/"
-        f"{flavor}_fiducial_map_{map_era}_{FIDUCIAL_MAP_VERSION}.json"
-    )
-    try:
-        with fsspec.open(url) as handle:
-            payload = json.load(handle)
-    except Exception as error:  # xrootd failure, missing era, expired proxy
-        if _require_fiducial_maps():
-            raise RuntimeError(f"Could not read fiducial map {url}: {error}") from error
-        return ()
-    return _hot_spots_from_payload(payload)
-
-
-def _load_fiducial_hot_spots(flavor: str, year=None, era=None) -> tuple:
-    """Hot spots for one flavor: explicit override first, else EOS by era.
-
-    Without DISAPPTRKS_REQUIRE_FIDUCIAL_MAPS a resolution failure returns no hot
-    spots, which silently disables the veto -- set it for anything whose yields
-    matter.
-    """
-    path = _fiducial_map_path(flavor)
-    if path is not None:
-        hot_spots = _local_fiducial_hot_spots(str(path))
-        source = str(path)
-    else:
-        map_era = _fiducial_map_era(year, era)
-        if map_era is None:
-            if _require_fiducial_maps():
-                raise ValueError(
-                    f"No dataset year given, so the {flavor} fiducial map cannot be "
-                    f"resolved. Set DISAPPTRKS_{flavor.upper()}_FIDUCIAL_MAP_JSON or "
-                    "DISAPPTRKS_FIDUCIAL_MAP_DIR."
-                )
-            return ()
-        hot_spots = _eos_fiducial_hot_spots(flavor, map_era)
-        source = f"EOS {map_era}"
-
-    if not hot_spots and _require_fiducial_maps():
-        raise ValueError(f"Fiducial map {source} has no hot spots")
-    return hot_spots
-
-
-def _fiducial_map_mask(tracks, hot_spots):
-    """Veto tracks inside a hot spot.  Radii come from the map, with no floor."""
-    import awkward as ak
-
-    mask = ak.ones_like(tracks.eta, dtype=bool)
-    for eta, phi, radius in hot_spots:
-        dr = np.sqrt((tracks.eta - eta) ** 2 + delta_phi(tracks.phi, phi) ** 2)
-        mask = mask & (dr > radius)
-    return mask
 
 
 def delta_phi(phi1, phi2):
     return np.arctan2(np.sin(phi1 - phi2), np.cos(phi1 - phi2))
+
+
+def met_no_mu_minus_lepton(events, leptons, *, flavor: str):
+    """Return legacy MET-no-muon-minus-one for a selected lepton tag.
+
+    ``MetNoMu`` already treats every muon as invisible, so a muon tag must not
+    be added a second time. Visible electron and tau tags still need to be
+    added to the stored no-muon MET vector.
+    """
+    import awkward as ak
+
+    if flavor == "muon":
+        return events.MetNoMu.pt, events.MetNoMu.phi
+    if flavor not in {"electron", "tau"}:
+        raise ValueError(f"unknown lepton flavor: {flavor}")
+
+    tag = ak.firsts(leptons)
+    tag_pt = ak.fill_none(tag.pt, 0.0)
+    tag_phi = ak.fill_none(tag.phi, 0.0)
+    met_x = events.MetNoMu.pt * np.cos(events.MetNoMu.phi)
+    met_y = events.MetNoMu.pt * np.sin(events.MetNoMu.phi)
+    met_x = met_x + tag_pt * np.cos(tag_phi)
+    met_y = met_y + tag_pt * np.sin(tag_phi)
+    return np.sqrt(met_x * met_x + met_y * met_y), np.arctan2(met_y, met_x)
 
 
 def minimum_delta_r(tracks, objects, object_mask=None):
@@ -279,18 +53,19 @@ def isomu24_trigger_object_mask(
     trigobjs,
     *,
     iso_bit: int = 1 << 1,
-    single_muon_bit: int = 1 << 2,
+    single_muon_bit: int = 1 << 3,
 ):
     """NanoAOD trigger objects corresponding to the isolated SingleMuon leg.
 
     The legacy unversioned DisappTrks muon tag-and-probe path configured
     ``EventMuonTPProducer`` to use PAT trigger objects from
     ``hltIterL3MuonCandidates::HLT`` with the
-    ``hltL3crIsoL1sSingleMu22L1f0L2f10QL3f24QL3trkIsoFiltered`` filter.  NanoAOD
-    stores the trigger-object collection/filter information as compact
-    ``TrigObj`` IDs and filter bits.  For ``HLT_IsoMu24``, the closest NanoAOD
-    equivalent is a muon trigger object carrying both the isolated-muon and
-    SingleMuon filter bits.
+    ``hltL3crIsoL1sSingleMu22L1f0L2f10QL3f24QL3trkIsoFiltered`` filter.  For
+    2022 C/D the legacy config uses the ``...Filtered0p08`` variant.  NanoAOD
+    stores this trigger-object collection/filter information as compact
+    ``TrigObj`` IDs and filter bits: bit 1 is the isolated-muon bit, and bit 3
+    is the SingleMuon-path bit.  Bit 2 is the muon-tau overlap bit, so it should
+    not be accepted for the SingleMuon tag-and-probe trigger match.
     """
 
     return (
@@ -300,6 +75,47 @@ def isomu24_trigger_object_mask(
     )
 
 
+def single_electron_trigger_object_mask(
+    trigobjs,
+    *,
+    wptight_bit: int = 1 << 1,
+):
+    """NanoAOD trigger objects corresponding to the tight SingleElectron leg.
+
+    In the NanoAOD ``TrigObj`` electron quality-bit ordering, bit 1 corresponds
+    to ``hltEle*WPTight*TrackIsoFilter*``.  That is the compact-Nano analogue of
+    the legacy ``hltEle32WPTightGsfTrackIsoFilter`` trigger-object filter used
+    for the electron tag-and-probe trigger matching.
+    """
+
+    return (trigobjs.id == 11) & ((trigobjs.filterBits & wptight_bit) != 0)
+
+
+def add_electron_derived_fields(events, *, trigger_match_dr: float = 0.3):
+    """Attach electron quantities needed for legacy-style tag selections."""
+    import awkward as ak
+
+    electrons = events.Electron
+    single_ele_objects = single_electron_trigger_object_mask(events.TrigObj)
+    d_r_min_single_ele = minimum_delta_r(
+        electrons,
+        events.TrigObj,
+        single_ele_objects,
+    )
+    matched_single_ele = (
+        single_electron_trigger_mask(events)
+        & (d_r_min_single_ele >= 0.0)
+        & (d_r_min_single_ele < trigger_match_dr)
+    )
+    electrons = ak.with_field(
+        electrons,
+        d_r_min_single_ele,
+        "dRMinSingleElectronTrigObj",
+    )
+    electrons = ak.with_field(electrons, matched_single_ele, "matchedSingleElectron")
+    return electrons
+
+
 def add_muon_derived_fields(events, *, trigger_match_dr: float = 0.3):
     """Attach muon quantities needed for the tag-and-probe selections."""
     import awkward as ak
@@ -307,8 +123,13 @@ def add_muon_derived_fields(events, *, trigger_match_dr: float = 0.3):
     muons = events.Muon
     isomu24_objects = isomu24_trigger_object_mask(events.TrigObj)
     d_r_min_isomu24 = minimum_delta_r(muons, events.TrigObj, isomu24_objects)
-    matched_isomu24 = (
+    hlt_isomu24 = (
         events.HLT.IsoMu24
+        if "HLT" in events.fields and "IsoMu24" in events.HLT.fields
+        else _event_bool_like(events, False)
+    )
+    matched_isomu24 = (
+        hlt_isomu24
         & (d_r_min_isomu24 >= 0.0)
         & (d_r_min_isomu24 < trigger_match_dr)
     )
@@ -401,6 +222,36 @@ def single_electron_trigger_mask(events):
     return mask if mask is not None else _event_bool_like(events, False)
 
 
+def trigger_matched_track_mask(
+    events,
+    tracks,
+    *,
+    flavor: str,
+    trigger_match_dr: float = 0.3,
+):
+    """Return probe tracks matched to the lepton trigger object."""
+
+    import awkward as ak
+
+    if flavor in ("muon", "tau_mu"):
+        trigger_objects = events.TrigObj[isomu24_trigger_object_mask(events.TrigObj)]
+        event_trigger = (
+            events.HLT.IsoMu24
+            if "HLT" in events.fields and "IsoMu24" in events.HLT.fields
+            else _event_bool_like(events, False)
+        )
+    elif flavor in ("electron", "tau_ele"):
+        trigger_objects = events.TrigObj[
+            single_electron_trigger_object_mask(events.TrigObj)
+        ]
+        event_trigger = single_electron_trigger_mask(events)
+    else:
+        raise ValueError(f"unknown lepton trigger flavor: {flavor}")
+
+    d_r_min = minimum_delta_r(tracks, trigger_objects)
+    return event_trigger & (d_r_min >= 0.0) & (d_r_min < trigger_match_dr)
+
+
 def electron_tag_progression_masks(
     electrons,
     events,
@@ -418,7 +269,10 @@ def electron_tag_progression_masks(
     dz_ok = (barrel & (abs(electrons.dz) < 0.10)) | (
         endcap & (abs(electrons.dz) < 0.20)
     )
-    mask = single_electron_trigger_mask(events) & (electrons.pt > pt_min)
+    tag_trigger = single_electron_trigger_mask(events)
+    if "matchedSingleElectron" in electrons.fields:
+        tag_trigger = tag_trigger & electrons.matchedSingleElectron
+    mask = tag_trigger & (electrons.pt > pt_min)
     masks = {"electron_pt35": mask}
 
     mask = mask & (abs(electrons.eta) < eta_max)
@@ -514,12 +368,65 @@ def hadronic_tau_veto_object_mask(
     )
 
 
+def hadronic_tau_control_object_mask(
+    taus,
+    *,
+    vsjet_tight: float = 0.8841,
+    vse_vvvloose: float = 0.099,
+    vsmu_vloose: float = 0.2949,
+):
+    """Hadronic taus for the AN Table-27 single-tau control sample.
+
+    Table 14 requests decay-mode finding, tight isolation, VVVLoose rejection
+    against electrons, and VLoose rejection against muons.  Run-3 NanoAOD
+    stores the DeepTau 2018v2p5 discriminators rather than the legacy
+    ``byTightCombinedIsolationDeltaBetaCorr3Hits`` flag, so Tight VSjet is the
+    NanoAOD representation of the isolation/light-jet-rejection requirement.
+
+    Prefer the integer working-point fields when present.  Custom NanoAOD
+    productions that only retain raw scores use the corresponding Run-3
+    working-point thresholds.
+    """
+
+    decay_mode = taus.idDecayModeNewDMs
+    if "idDeepTau2018v2p5VSjet" in taus.fields:
+        # OSUNano stores the highest passed working-point ordinal, not a
+        # bitmap.  For VSjet/VSe: 1=VVVLoose, ..., 6=Tight; for VSmu:
+        # 1=VLoose, ..., 4=Tight.
+        pass_vsjet = taus.idDeepTau2018v2p5VSjet >= 6
+        pass_vse = taus.idDeepTau2018v2p5VSe >= 1
+        pass_vsmu = taus.idDeepTau2018v2p5VSmu >= 1
+    else:
+        required = {
+            "rawDeepTau2018v2p5VSjet",
+            "rawDeepTau2018v2p5VSe",
+            "rawDeepTau2018v2p5VSmu",
+        }
+        missing = required.difference(taus.fields)
+        if missing:
+            raise AttributeError(
+                "Table-27 tau ID requires DeepTau 2018v2p5 fields; missing "
+                + ", ".join(sorted(missing))
+            )
+        pass_vsjet = taus.rawDeepTau2018v2p5VSjet > vsjet_tight
+        pass_vse = taus.rawDeepTau2018v2p5VSe > vse_vvvloose
+        pass_vsmu = taus.rawDeepTau2018v2p5VSmu > vsmu_vloose
+
+    return (
+        (taus.pt > 50.0)
+        & (abs(taus.eta) < 2.1)
+        & decay_mode
+        & pass_vsjet
+        & pass_vse
+        & pass_vsmu
+    )
+
+
 def layer_mask(tracks, layer: str):
+    layers = tracks.hp_nValidTrackerHits
     # Prefer the explicit layer count when supplied by the custom extension.
     if "hp_trackerLayersWithMeasurement" in tracks.fields:
         layers = tracks.hp_trackerLayersWithMeasurement
-    else:
-        layers = tracks.hp_nValidTrackerHits
     if layer == "NLayers4":
         return layers == 4
     if layer == "NLayers5":
@@ -531,7 +438,126 @@ def layer_mask(tracks, layer: str):
     raise ValueError(f"unknown layer bin: {layer}")
 
 
-def add_isotrack_derived_fields(events, *, year=None, era=None):
+def analysis_layer_mask(tracks, layer: str):
+    """Layer-bin selection including the nominal high-purity requirement.
+
+    Every analysis layer bin requires the CMS high-purity track-quality bit.
+    Keep this separate from :func:`layer_mask` so diagnostic studies can still
+    classify rejected tracks by their measured layer count.
+    """
+
+    return layer_mask(tracks, layer) & tracks.isHighPurityTrack
+
+
+# Maximum allowed ratio of a track's largest per-hit dE/dx measurement to its
+# median per-hit dE/dx.  Originally derived for the fake-track background
+# (see :func:`fake_track_layer_cut`) and shared with the lepton-background
+# probe-track selections below.  The working point is layer-bin dependent;
+# only NLayers4 and NLayers5 have derived values so far -- other layer bins
+# get no dE/dx cut until a value is derived for them.
+PROBE_TRACK_DEDX_MAX_OVER_MEDIAN = {
+    "NLayers4": 2.5,
+    "NLayers5": 2.5,
+}
+
+
+def dedx_max_over_median_mask(tracks, layer: str):
+    """dE/dx max-over-median term shared by the fake-track and probe-track cuts.
+
+    Returns ``True`` (a no-op AND term) if ``layer`` has no configured
+    working point in :data:`PROBE_TRACK_DEDX_MAX_OVER_MEDIAN`, or if
+    ``tracks`` does not carry the ``dEdxMaximumOverMedian`` summary field
+    (callers must attach it, e.g. via ``_dedx_track_summaries``, before this
+    cut can take effect).
+    """
+
+    dedx_max_over_median = PROBE_TRACK_DEDX_MAX_OVER_MEDIAN.get(layer)
+    if dedx_max_over_median is None or "dEdxMaximumOverMedian" not in tracks.fields:
+        return True
+
+    import awkward as ak
+
+    return ak.fill_none(tracks.dEdxMaximumOverMedian <= dedx_max_over_median, False)
+
+
+def probe_track_dedx_mask(tracks):
+    """Per-track dE/dx max-over-median requirement, looked up by each track's
+    own measured layer count.
+
+    Used by the lepton-background Pveto probe-track selections
+    (:func:`muon_veto_probe_track_mask`, :func:`lepton_veto_probe_track_mask`,
+    :func:`tau_veto_probe_track_mask`, and their AN Table-16/22/23 cutflow
+    variants), which build one mixed-NLayers probe-track collection at
+    ``layer="combinedBins"`` rather than a separate collection per layer bin.
+    Contrast :func:`dedx_max_over_median_mask`, which looks up a single
+    working point for a caller-chosen layer bin and is correct only when the
+    caller has already restricted ``tracks`` to that one bin (e.g. the
+    fake-track background, which does loop per layer bin) -- calling it with
+    ``"combinedBins"`` against a mixed population is a no-op, since
+    ``PROBE_TRACK_DEDX_MAX_OVER_MEDIAN`` has no ``"combinedBins"`` entry.
+
+    Here, each track is instead checked against whichever entry of
+    :data:`PROBE_TRACK_DEDX_MAX_OVER_MEDIAN` matches its own layer count, so
+    NLayers4/NLayers5 tracks mixed into a combinedBins collection still get
+    their bin's working point; tracks whose own layer count has no configured
+    working point (NLayers6plus and up) pass unconditionally.  Returns
+    ``True`` (a no-op) if ``tracks`` doesn't carry the
+    ``dEdxMaximumOverMedian`` summary field.
+    """
+
+    if "dEdxMaximumOverMedian" not in tracks.fields:
+        return True
+
+    import awkward as ak
+
+    mask = None
+    for configured_layer, dedx_max_over_median in PROBE_TRACK_DEDX_MAX_OVER_MEDIAN.items():
+        applies = layer_mask(tracks, configured_layer)
+        passes = ak.fill_none(
+            tracks.dEdxMaximumOverMedian <= dedx_max_over_median, False
+        )
+        term = ~applies | passes
+        mask = term if mask is None else (mask & term)
+    return mask if mask is not None else True
+
+
+ISOLATED_TRACK_SELECTION_FIELDS = (
+    "track_pt55",
+    "track_eta2p1",
+    "track_noECALCrack",
+    "track_noDTWheelGap",
+    "track_noCSCTransition",
+    "track_noTOBCrack",
+    "track_fiducialECAL",
+    "track_pixelHits4",
+    "track_validHits4",
+    "track_noMissingInner",
+    "track_noMissingMiddle",
+    "track_chargedIso0p05",
+    "track_dxy0p02",
+    "track_dz0p5",
+    "track_dRJet0p5",
+    "track_layers4plus",
+    "track_highPurity",
+)
+
+
+CANDIDATE_TRACK_SELECTION_FIELDS = (
+    *ISOLATED_TRACK_SELECTION_FIELDS,
+    "track_electronVeto",
+    "track_muonVeto",
+    "track_tauVeto",
+)
+
+
+DISAPPEARING_TRACK_SELECTION_FIELDS = (
+    *CANDIDATE_TRACK_SELECTION_FIELDS,
+    "track_calo10",
+    "track_missingOuter3",
+)
+
+
+def add_isotrack_derived_fields(events):
     """Attach transparent analysis quantities to the ``IsoTrack`` collection."""
     import awkward as ak
 
@@ -550,24 +576,7 @@ def add_isotrack_derived_fields(events, *, year=None, era=None):
         ~tracks.passesTOBDzOrLambda,
         "inTOBCrack",
     )
-    if "isFiducialElectronTrack" not in tracks.fields:
-        tracks = ak.with_field(
-            tracks,
-            _fiducial_map_mask(
-                tracks, _load_fiducial_hot_spots("electron", year=year, era=era)
-            ),
-            "isFiducialElectronTrack",
-        )
-    if "isFiducialMuonTrack" not in tracks.fields:
-        tracks = ak.with_field(
-            tracks,
-            _fiducial_map_mask(
-                tracks, _load_fiducial_hot_spots("muon", year=year, era=era)
-            ),
-            "isFiducialMuonTrack",
-        )
     raw_calo_energy = tracks.caloEm + tracks.caloHad
-    tracks = ak.with_field(tracks, raw_calo_energy, "rawCaloEnergy")
     if "caloTotNoPU" in tracks.fields:
         calo_energy = tracks.caloTotNoPU
     else:
@@ -602,109 +611,26 @@ def add_isotrack_derived_fields(events, *, year=None, era=None):
     tracks = ak.with_field(
         tracks, minimum_delta_r(tracks, events.Electron), "dRMinElectron"
     )
+    veto_electrons = events.Electron.cutBased >= 1
+    tracks = ak.with_field(
+        tracks,
+        minimum_delta_r(tracks, events.Electron, veto_electrons),
+        "dRMinVetoElectron",
+    )
     tracks = ak.with_field(
         tracks, minimum_delta_r(tracks, events.Muon), "dRMinMuon"
+    )
+    loose_muons = events.Muon.looseId
+    tracks = ak.with_field(
+        tracks,
+        minimum_delta_r(tracks, events.Muon, loose_muons),
+        "dRMinLooseMuon",
     )
     good_taus = hadronic_tau_veto_object_mask(events.Tau)
     tracks = ak.with_field(
         tracks, minimum_delta_r(tracks, events.Tau, good_taus), "dRMinTauHad"
     )
     return tracks
-
-
-def random_arbitrated_electron_tag_mask(electrons, events):
-    """Pick one selected Figure-1 electron tag per event, reproducibly."""
-    import awkward as ak
-
-    tag_mask = electron_tag_mask(electrons, events)
-    electron_index = ak.local_index(electrons.pt)
-    selected_indices = electron_index[tag_mask]
-    n_selected = ak.num(selected_indices)
-    modulo = ak.where(n_selected > 0, n_selected, 1)
-    event_number = events.event if "event" in events.fields else events.run
-    chosen_rank = event_number % modulo
-    selected_rank = ak.local_index(selected_indices)
-    chosen_index = ak.firsts(selected_indices[selected_rank == chosen_rank])
-    return ak.fill_none(tag_mask & (electron_index == chosen_index), False)
-
-
-def figure1_electron_control_track_cutflow_masks(
-    tracks,
-    electrons,
-    selected_electron_mask,
-):
-    """Cumulative track masks for the Figure-1 electron-control selection."""
-    import awkward as ak
-
-    selected_electron_dr = minimum_delta_r(
-        tracks,
-        electrons,
-        selected_electron_mask,
-    )
-    masks = {}
-    mask = tracks.pt > 55.0
-    masks["track_pt55"] = mask
-
-    mask = mask & (selected_electron_dr >= 0.0) & (selected_electron_dr < 0.1)
-    masks["track_elecDR0p1"] = mask
-
-    masked_dr = ak.where(mask, selected_electron_dr, np.inf)
-    best_dr = ak.min(masked_dr, axis=1)
-    mask = mask & (selected_electron_dr == best_dr)
-    masks["track_matchRecoElec"] = mask
-
-    mask = mask & (abs(tracks.eta) < 2.1)
-    masks["track_eta2p1"] = mask
-
-    mask = mask & ~tracks.inECALCrack
-    masks["track_noECALCrack"] = mask
-
-    mask = mask & ~tracks.inDTWheelGap
-    masks["track_noDTWheelGap"] = mask
-
-    mask = mask & ~tracks.inCSCTransition
-    masks["track_noCSCTransition"] = mask
-
-    mask = mask & ~tracks.inTOBCrack
-    masks["track_noTOBCrack"] = mask
-
-    mask = mask & tracks.isFiducialElectronTrack
-    masks["track_fiducialElectron"] = mask
-
-    mask = mask & tracks.isFiducialMuonTrack
-    masks["track_fiducialMuon"] = mask
-
-    mask = mask & tracks.isFiducialECALTrack
-    masks["track_fiducialECAL"] = mask
-
-    mask = mask & (tracks.hp_nValidPixelHits >= 4)
-    masks["track_pixelHits4"] = mask
-
-    mask = mask & (tracks.hp_nValidHits >= 4)
-    masks["track_validHits4"] = mask
-
-    mask = mask & (tracks.missingInnerHits == 0)
-    masks["track_noMissingInner"] = mask
-
-    mask = mask & (tracks.missingMiddleHits == 0)
-    masks["track_noMissingMiddle"] = mask
-
-    mask = mask & (tracks.pfRelIso03_chg < 0.05)
-    masks["track_chargedIso0p05"] = mask
-
-    mask = mask & (abs(tracks.dxy) < 0.02)
-    masks["track_dxy0p02"] = mask
-
-    mask = mask & (abs(tracks.dz) < 0.5)
-    masks["track_dz0p5"] = mask
-
-    mask = mask & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
-    masks["track_dRJet0p5"] = mask
-
-    mask = mask & layer_mask(tracks, "NLayers6plus")
-    masks["track_layers6plus"] = mask
-
-    return masks
 
 
 def base_probe_track_mask(
@@ -715,8 +641,14 @@ def base_probe_track_mask(
     apply_jet_cut: bool = True,
     apply_calo_cut: bool = True,
     apply_outer_hits_cut: bool = False,
-    apply_electron_fiducial_map: bool = False,
-    apply_muon_fiducial_map: bool = False,
+    require_high_purity: bool = True,
+    # Defaults to off: this helper is also shared by the signal-region
+    # `search_track_mask`, which must not silently pick up a dE/dx cut just
+    # because some other caller (e.g. a lepton-background probe track)
+    # attached `dEdxMaximumOverMedian` onto the same track collection earlier
+    # in the same event pass.  Callers that want the cut (the lepton-
+    # background probe-track wrappers below) pass it explicitly.
+    require_dedx_max_over_median: bool = False,
 ):
     mask = (
         (tracks.pt > pt_min)
@@ -733,12 +665,14 @@ def base_probe_track_mask(
         & (tracks.pfRelIso03_chg < 0.05)
         & (abs(tracks.dxy) < 0.02)
         & (abs(tracks.dz) < 0.5)
-        & layer_mask(tracks, layer)
+        & (
+            analysis_layer_mask(tracks, layer)
+            if require_high_purity
+            else layer_mask(tracks, layer)
+        )
     )
-    if apply_electron_fiducial_map:
-        mask = mask & tracks.isFiducialElectronTrack
-    if apply_muon_fiducial_map:
-        mask = mask & tracks.isFiducialMuonTrack
+    if require_dedx_max_over_median:
+        mask = mask & probe_track_dedx_mask(tracks)
     if apply_jet_cut:
         mask = mask & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
     if apply_calo_cut:
@@ -748,13 +682,202 @@ def base_probe_track_mask(
     return mask
 
 
-def muon_veto_probe_track_cutflow_masks(tracks, *, layer: str = "combinedBins"):
+def isolated_track_selection_mask(
+    tracks,
+    *,
+    pt_min: float = 55.0,
+    layer: str = "combinedBins",
+):
+    """AN Table-18 isolated-track selection before later candidate-track cuts.
+
+    This wrapper gives the legacy ``isoTrkWithPt55Cuts`` requirements a name
+    matching the AN: pT, eta/crack/fiducial regions, hit and missing-hit
+    quality, track isolation, impact parameters, track-jet separation, and the
+    requested layer bin.  Calorimeter energy, missing outer hits, and lepton
+    vetoes are intentionally left for the disappearing-track candidate stage.
+    """
+
+    if pt_min == 55.0:
+        return isolated_track_selection_cutflow_masks(tracks, layer=layer)[
+            "track_highPurity"
+        ]
+
+    return base_probe_track_mask(
+        tracks,
+        pt_min=pt_min,
+        layer=layer,
+        apply_jet_cut=True,
+        apply_calo_cut=False,
+        apply_outer_hits_cut=False,
+    )
+
+
+def isolated_track_selection_cutflow_masks(
+    tracks,
+    *,
+    layer: str = "combinedBins",
+    require_high_purity: bool = True,
+):
+    """Cumulative masks through the AN Table-18 isolated-track endpoint."""
+
+    search_masks = search_track_cutflow_masks(
+        tracks,
+        layer=layer,
+        require_high_purity=require_high_purity,
+    )
+    return {
+        field: search_masks[field]
+        for field in ISOLATED_TRACK_SELECTION_FIELDS
+    }
+
+
+def candidate_track_selection_cutflow_masks(
+    tracks,
+    *,
+    layer: str = "combinedBins",
+    require_high_purity: bool = True,
+):
+    """Cumulative masks through the AN Table-19 candidate-track endpoint."""
+
+    masks = dict(
+        isolated_track_selection_cutflow_masks(
+            tracks,
+            layer=layer,
+            require_high_purity=require_high_purity,
+        )
+    )
+    mask = masks["track_highPurity"]
+
+    mask = mask & ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
+    masks["track_electronVeto"] = mask
+
+    mask = mask & ((tracks.dRMinMuon < 0.0) | (tracks.dRMinMuon > 0.15))
+    masks["track_muonVeto"] = mask
+
+    mask = mask & ((tracks.dRMinTauHad < 0.0) | (tracks.dRMinTauHad > 0.15))
+    masks["track_tauVeto"] = mask
+
+    return masks
+
+
+def candidate_track_selection_mask(tracks, *, layer: str = "combinedBins"):
+    """AN Table-19 candidate-track selection."""
+
+    return candidate_track_selection_cutflow_masks(tracks, layer=layer)["track_tauVeto"]
+
+
+def disappearing_track_selection_cutflow_masks(
+    tracks,
+    *,
+    layer: str = "combinedBins",
+    require_high_purity: bool = True,
+):
+    """Cumulative masks through the AN Table-20 disappearing-track endpoint."""
+
+    masks = dict(
+        candidate_track_selection_cutflow_masks(
+            tracks,
+            layer=layer,
+            require_high_purity=require_high_purity,
+        )
+    )
+    mask = masks["track_tauVeto"]
+
+    mask = mask & (tracks.caloEnergy < 10.0)
+    masks["track_calo10"] = mask
+
+    mask = mask & (tracks.missingOuterHits >= 3)
+    masks["track_missingOuter3"] = mask
+
+    return masks
+
+
+def fiducial_map_probe_track_mask(
+    tracks,
+    *,
+    flavor: str,
+    layer: str = "combinedBins",
+):
+    """Legacy ``*FiducialCalc*OldCuts`` probe-track mask.
+
+    The Run-3 DisappTrks fiducial maps are built from the
+    ``ElectronFiducialCalcBeforeOldCuts/AfterOldCuts`` and
+    ``MuonFiducialCalcBeforeOldCuts/AfterOldCuts`` channels.  These are based
+    on the Z tag-and-probe selections with the electron/muon fiducial-map vetoes
+    removed, but with the "old" hit requirements restored:
+
+    * number of valid pixel hits >= 3
+    * number of valid hits >= 7
+
+    The measured lepton veto is intentionally left open here; the corresponding
+    ``After`` collection is formed by applying the loose/veto lepton veto on top
+    of the Z-window pairs.
+    """
+
+    if flavor not in ("electron", "muon"):
+        raise ValueError(f"unknown fiducial-map flavor: {flavor}")
+
+    mask = (
+        (tracks.pt > 30.0)
+        & (abs(tracks.eta) < 2.1)
+        & ~tracks.inECALCrack
+        & ~tracks.inDTWheelGap
+        & ~tracks.inCSCTransition
+        & ~tracks.inTOBCrack
+        # The legacy fiducial-map channels remove only the electron/muon
+        # fiducial-map cuts.  The ECAL fiducial cut remains in ``isoTrkCuts``.
+        & tracks.isFiducialECALTrack
+        & (tracks.hp_nValidPixelHits >= 3)
+        & (tracks.hp_nValidHits >= 7)
+        & (tracks.missingInnerHits == 0)
+        & (tracks.missingMiddleHits == 0)
+        & (tracks.pfRelIso03_chg < 0.05)
+        & (abs(tracks.dxy) < 0.02)
+        & (abs(tracks.dz) < 0.5)
+        # Fiducial maps measure detector hot spots and are kept independent of
+        # the layer-dependent high-purity requirement in the analysis bins.
+        & layer_mask(tracks, layer)
+        & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
+    )
+
+    if flavor == "muon":
+        # ``ZtoMuProbeTrkWithZCuts`` includes the electron veto, tau-had veto,
+        # and E_calo requirement.  The measured loose-muon veto is applied only
+        # when forming ``MuonFiducialAfter``.
+        mask = (
+            mask
+            & ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
+            & ((tracks.dRMinTauHad < 0.0) | (tracks.dRMinTauHad > 0.15))
+            & (tracks.caloEnergy < 10.0)
+        )
+    else:
+        # ``ZtoEleProbeTrkWithZCuts`` includes the muon veto and tau-had veto,
+        # but not the E_calo requirement.  The measured veto-electron veto is
+        # applied only when forming ``ElectronFiducialAfter``.
+        mask = (
+            mask
+            & ((tracks.dRMinMuon < 0.0) | (tracks.dRMinMuon > 0.15))
+            & ((tracks.dRMinTauHad < 0.0) | (tracks.dRMinTauHad > 0.15))
+        )
+
+    return mask
+
+
+def muon_veto_probe_track_cutflow_masks(
+    tracks,
+    *,
+    layer: str = "combinedBins",
+    require_dedx_max_over_median: bool = True,
+):
     """Cumulative probe-track masks in the AN Table 16 order.
 
     These are used for the displayed muon-Pveto cutflow.  The implementation
     follows the legacy ``ZtoMuProbeTrk`` probe definition: the valid-hit
     requirement from ``isoTrkCuts`` is kept together with the pixel-hit row even
-    though Table 16 only prints the pixel-hit label.
+    though Table 16 only prints the pixel-hit label.  The high-purity and
+    dE/dx requirements are applied right after the ``dz`` cut, matching
+    :func:`base_probe_track_mask`; the trailing ``track_layers4plus`` row is a
+    pure layer-count cut since purity was already applied earlier.
     """
     masks = {}
     mask = tracks.pt > 30.0
@@ -796,6 +919,13 @@ def muon_veto_probe_track_cutflow_masks(tracks, *, layer: str = "combinedBins"):
     mask = mask & (abs(tracks.dz) < 0.5)
     masks["track_dz0p5"] = mask
 
+    mask = mask & tracks.isHighPurityTrack
+    masks["track_highPurity"] = mask
+
+    if require_dedx_max_over_median:
+        mask = mask & probe_track_dedx_mask(tracks)
+    masks["track_dedx"] = mask
+
     mask = mask & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
     masks["track_dRJet0p5"] = mask
 
@@ -825,7 +955,12 @@ def muon_tag_mask(
     )["muon_selected_tag"]
 
 
-def muon_veto_probe_track_mask(tracks, *, layer: str = "combinedBins"):
+def muon_veto_probe_track_mask(
+    tracks,
+    *,
+    layer: str = "combinedBins",
+    require_dedx_max_over_median: bool = True,
+):
     """Probe-track denominator for a first muon-veto tag-and-probe study.
 
     This intentionally does not apply the muon veto.  The muon-veto pass/fail
@@ -837,6 +972,7 @@ def muon_veto_probe_track_mask(tracks, *, layer: str = "combinedBins"):
         layer=layer,
         apply_calo_cut=True,
         apply_outer_hits_cut=False,
+        require_dedx_max_over_median=require_dedx_max_over_median,
     ) & (
         ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
         & ((tracks.dRMinTauHad < 0.0) | (tracks.dRMinTauHad > 0.15))
@@ -848,6 +984,7 @@ def lepton_veto_probe_track_mask(
     *,
     measured_veto: str,
     layer: str = "combinedBins",
+    require_dedx_max_over_median: bool = True,
 ):
     """Probe-track denominator with the measured lepton veto intentionally open."""
     mask = base_probe_track_mask(
@@ -860,6 +997,7 @@ def lepton_veto_probe_track_mask(
         # requirements.
         apply_calo_cut=(measured_veto != "electron"),
         apply_outer_hits_cut=False,
+        require_dedx_max_over_median=require_dedx_max_over_median,
     )
     if measured_veto != "electron":
         mask = mask & ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
@@ -870,7 +1008,12 @@ def lepton_veto_probe_track_mask(
     return mask
 
 
-def tau_veto_probe_track_mask(tracks, *, layer: str = "combinedBins"):
+def tau_veto_probe_track_mask(
+    tracks,
+    *,
+    layer: str = "combinedBins",
+    require_dedx_max_over_median: bool = True,
+):
     """Tau Pveto tag-and-probe denominator from AN Tables 22/23.
 
     The tau denominator intentionally leaves the measured tau veto open.  It
@@ -885,14 +1028,26 @@ def tau_veto_probe_track_mask(tracks, *, layer: str = "combinedBins"):
         apply_jet_cut=False,
         apply_calo_cut=False,
         apply_outer_hits_cut=False,
+        require_dedx_max_over_median=require_dedx_max_over_median,
     ) & (
         ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
         & ((tracks.dRMinMuon < 0.0) | (tracks.dRMinMuon > 0.15))
     )
 
 
-def tau_veto_probe_track_cutflow_masks(tracks, *, layer: str = "combinedBins"):
-    """Cumulative tau Pveto probe-track masks in the AN Table 22/23 order."""
+def tau_veto_probe_track_cutflow_masks(
+    tracks,
+    *,
+    layer: str = "combinedBins",
+    require_dedx_max_over_median: bool = True,
+):
+    """Cumulative tau Pveto probe-track masks in the AN Table 22/23 order.
+
+    The high-purity and dE/dx requirements are applied right after the ``dz``
+    cut, matching :func:`base_probe_track_mask`; the trailing
+    ``track_layers4plus`` row is a pure layer-count cut since purity was
+    already applied earlier.
+    """
 
     masks = {}
     mask = tracks.pt > 30.0
@@ -933,6 +1088,13 @@ def tau_veto_probe_track_cutflow_masks(tracks, *, layer: str = "combinedBins"):
 
     mask = mask & (abs(tracks.dz) < 0.5)
     masks["track_dz0p5"] = mask
+
+    mask = mask & tracks.isHighPurityTrack
+    masks["track_highPurity"] = mask
+
+    if require_dedx_max_over_median:
+        mask = mask & probe_track_dedx_mask(tracks)
+    masks["track_dedx"] = mask
 
     mask = mask & ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
     masks["track_electronVeto"] = mask
@@ -975,6 +1137,12 @@ def build_muon_veto_tag_probe_pairs(tags, probes):
 
     tag, probe = ak.unzip(ak.cartesian([tags, probes], axis=1))
     mass = invariant_mass(tag, probe)
+    d_r_min_loose_muon = (
+        probe.dRMinLooseMuon if "dRMinLooseMuon" in probe.fields else probe.dRMinMuon
+    )
+    probe_fires_trigger = (
+        probe.firesTrigger if "firesTrigger" in probe.fields else probe.pt > 1.0e12
+    )
     return ak.zip(
         {
             "mass": mass,
@@ -984,6 +1152,7 @@ def build_muon_veto_tag_probe_pairs(tags, probes):
             "probe_eta": probe.eta,
             "probe_phi": probe.phi,
             "probe_dRMinMuon": probe.dRMinMuon,
+            "probe_dRMinLooseMuon": d_r_min_loose_muon,
             "probe_missingOuterHits": probe.missingOuterHits,
             "probe_caloEnergy": probe.caloEnergy,
             "probe_nLayers": (
@@ -992,10 +1161,13 @@ def build_muon_veto_tag_probe_pairs(tags, probes):
                 else probe.hp_nValidTrackerHits
             ),
             "probe_passMuonVeto": (probe.dRMinMuon < 0.0) | (probe.dRMinMuon > 0.15),
+            "probe_passLooseMuonVeto": (d_r_min_loose_muon < 0.0)
+            | (d_r_min_loose_muon > 0.15),
             "probe_passMuonPVetoNoFiducial": (
                 ((probe.dRMinMuon < 0.0) | (probe.dRMinMuon > 0.15))
                 & (probe.missingOuterHits >= 3)
             ),
+            "probe_firesTrigger": probe_fires_trigger,
         }
     )
 
@@ -1012,15 +1184,27 @@ def build_lepton_veto_tag_probe_pairs(
 
     tag, probe = ak.unzip(ak.cartesian([tags, probes], axis=1))
     mass = invariant_mass(tag, probe, first_mass=tag_mass, second_mass=probe_mass)
+    d_r_min_veto_electron = (
+        probe.dRMinVetoElectron
+        if "dRMinVetoElectron" in probe.fields
+        else probe.dRMinElectron
+    )
+    probe_fires_trigger = (
+        probe.firesTrigger if "firesTrigger" in probe.fields else probe.pt > 1.0e12
+    )
     return ak.zip(
         {
             "mass": mass,
             "os": tag.charge * probe.charge < 0,
             "ss": tag.charge * probe.charge > 0,
             "probe_dRMinElectron": probe.dRMinElectron,
+            "probe_dRMinVetoElectron": d_r_min_veto_electron,
             "probe_dRMinMuon": probe.dRMinMuon,
             "probe_dRMinTauHad": probe.dRMinTauHad,
             "probe_dRMinJet": probe.dRMinJet,
+            "probe_pt": probe.pt,
+            "probe_eta": probe.eta,
+            "probe_phi": probe.phi,
             "probe_caloEnergy": probe.caloEnergy,
             "probe_missingOuterHits": probe.missingOuterHits,
             "probe_nLayers": (
@@ -1031,6 +1215,8 @@ def build_lepton_veto_tag_probe_pairs(
             "probe_passElectronVeto": (
                 (probe.dRMinElectron < 0.0) | (probe.dRMinElectron > 0.15)
             ),
+            "probe_passVetoElectronVeto": (d_r_min_veto_electron < 0.0)
+            | (d_r_min_veto_electron > 0.15),
             "probe_passTauVeto": (
                 (probe.dRMinTauHad < 0.0) | (probe.dRMinTauHad > 0.15)
             ),
@@ -1045,6 +1231,7 @@ def build_lepton_veto_tag_probe_pairs(
                 & (probe.caloEnergy < 10.0)
                 & (probe.missingOuterHits >= 3)
             ),
+            "probe_firesTrigger": probe_fires_trigger,
         }
     )
 
@@ -1161,15 +1348,19 @@ def muon_probe_pair_layer_mask(pairs, layer: str):
     raise ValueError(f"unknown layer bin: {layer}")
 
 
-def search_track_mask(tracks, *, layer: str = "combinedBins"):
+def search_track_mask(
+    tracks,
+    *,
+    layer: str = "combinedBins",
+    require_high_purity: bool = True,
+):
     return base_probe_track_mask(
         tracks,
         pt_min=55.0,
         layer=layer,
         apply_calo_cut=True,
         apply_outer_hits_cut=True,
-        apply_electron_fiducial_map=True,
-        apply_muon_fiducial_map=True,
+        require_high_purity=require_high_purity,
     ) & (
         ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
         & ((tracks.dRMinMuon < 0.0) | (tracks.dRMinMuon > 0.15))
@@ -1177,21 +1368,62 @@ def search_track_mask(tracks, *, layer: str = "combinedBins"):
     )
 
 
-def fake_track_no_d0_mask(
+def disappearing_track_selection_mask(tracks, *, layer: str = "combinedBins"):
+    """AN Table-20 disappearing-track selection for the search region."""
+
+    return disappearing_track_selection_cutflow_masks(tracks, layer=layer)[
+        "track_missingOuter3"
+    ]
+
+
+def fake_track_layer_cut(
     tracks,
     *,
     layer: str = "combinedBins",
+    require_high_purity: bool = True,
+    require_dedx_max_over_median: bool = True,
+):
+    """Layer/high-purity/dE/dx term of the fake-track selection.
+
+    Split out of :func:`fake_track_no_d0_mask` so a caller looping over
+    several layer bins for the same tracks/d0 region can compute
+    :func:`fake_track_base_mask` once and combine it with this cheaper
+    per-layer term, instead of re-evaluating the whole selection per bin.
+
+    For layer bins listed in :data:`PROBE_TRACK_DEDX_MAX_OVER_MEDIAN`, an
+    additional cut requires ``tracks.dEdxMaximumOverMedian`` (the track's
+    largest per-hit dE/dx divided by its median per-hit dE/dx) to be at or
+    below the configured working point.  This is skipped if ``tracks`` does
+    not carry that field, so callers must attach it (e.g. via
+    ``_dedx_track_summaries``) before requesting a layer bin with a
+    configured threshold.
+    """
+
+    layer_cut = (
+        analysis_layer_mask(tracks, layer)
+        if require_high_purity
+        else layer_mask(tracks, layer)
+    )
+
+    if require_dedx_max_over_median:
+        layer_cut = layer_cut & dedx_max_over_median_mask(tracks, layer)
+
+    return layer_cut
+
+
+def fake_track_base_mask(
+    tracks,
+    *,
     d0_region: str = "sideband",
     pt_min: float = 55.0,
     sideband_min: float = 0.05,
     sideband_max: float = 0.50,
 ):
-    """Fake-track control selection with the d0 requirement replaced.
+    """Fake-track control selection minus the layer/high-purity/dE/dx term.
 
-    The fake-track estimate uses disappearing-track-like candidates with the
-    nominal d0 requirement removed.  The transfer factor uses the ratio of the
-    signal d0 window to the sideband, while the target-layer control yield is
-    counted in the sideband.
+    Every condition here is independent of the layer bin, so a caller
+    looping over layer bins for the same tracks/d0 region can compute this
+    once and AND it with :func:`fake_track_layer_cut` per bin.
     """
 
     abs_dxy = abs(tracks.dxy)
@@ -1217,7 +1449,6 @@ def fake_track_no_d0_mask(
         & (tracks.pfRelIso03_chg < 0.05)
         & (abs(tracks.dz) < 0.5)
         & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
-        & layer_mask(tracks, layer)
         & (tracks.caloEnergy < 10.0)
         & (tracks.missingOuterHits >= 3)
         & ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
@@ -1227,15 +1458,65 @@ def fake_track_no_d0_mask(
     )
 
 
+def fake_track_no_d0_mask(
+    tracks,
+    *,
+    layer: str = "combinedBins",
+    d0_region: str = "sideband",
+    pt_min: float = 55.0,
+    sideband_min: float = 0.05,
+    sideband_max: float = 0.50,
+    require_high_purity: bool = True,
+    require_dedx_max_over_median: bool = True,
+):
+    """Fake-track control selection with the d0 requirement replaced.
 
-def search_figure17_track_cutflow_masks(tracks, *, layer: str = "NLayers6plus"):
-    """Return cumulative track masks in the exact Figure-17 signal order."""
+    The fake-track estimate uses disappearing-track-like candidates with the
+    nominal d0 requirement removed.  The transfer factor uses the ratio of the
+    signal d0 window to the sideband, while the target-layer control yield is
+    counted in the sideband.
+
+    A thin wrapper combining :func:`fake_track_base_mask` and
+    :func:`fake_track_layer_cut` -- see those for what each term covers.  A
+    caller evaluating several layer bins for the same tracks/d0 region should
+    call them separately instead, to avoid recomputing the layer-independent
+    terms once per bin.
+    """
+
+    return fake_track_base_mask(
+        tracks,
+        d0_region=d0_region,
+        pt_min=pt_min,
+        sideband_min=sideband_min,
+        sideband_max=sideband_max,
+    ) & fake_track_layer_cut(
+        tracks,
+        layer=layer,
+        require_high_purity=require_high_purity,
+        require_dedx_max_over_median=require_dedx_max_over_median,
+    )
+
+
+def fake_track_sideband_cutflow_masks(
+    tracks,
+    *,
+    sideband_min: float = 0.05,
+    sideband_max: float = 0.50,
+):
+    """Return cumulative fake-track sideband candidate masks.
+
+    This is a diagnostic view of the fake-track sideband branch used for the
+    JetMET fake-track normalization.  It follows the disappearing-track-like
+    requirements with the nominal signal d0 requirement replaced by the
+    sideband ``sideband_min <= |d0| < sideband_max`` requirement.
+    """
+
     masks = {}
-    mask = abs(tracks.eta) < 2.1
-    masks["track_eta2p1"] = mask
-
-    mask = mask & (tracks.pt > 55.0)
+    mask = tracks.pt > 55.0
     masks["track_pt55"] = mask
+
+    mask = mask & (abs(tracks.eta) < 2.1)
+    masks["track_eta2p1"] = mask
 
     mask = mask & ~tracks.inECALCrack
     masks["track_noECALCrack"] = mask
@@ -1248,12 +1529,6 @@ def search_figure17_track_cutflow_masks(tracks, *, layer: str = "NLayers6plus"):
 
     mask = mask & ~tracks.inTOBCrack
     masks["track_noTOBCrack"] = mask
-
-    mask = mask & tracks.isFiducialElectronTrack
-    masks["track_fiducialElectron"] = mask
-
-    mask = mask & tracks.isFiducialMuonTrack
-    masks["track_fiducialMuon"] = mask
 
     mask = mask & tracks.isFiducialECALTrack
     masks["track_fiducialECAL"] = mask
@@ -1273,14 +1548,17 @@ def search_figure17_track_cutflow_masks(tracks, *, layer: str = "NLayers6plus"):
     mask = mask & (tracks.pfRelIso03_chg < 0.05)
     masks["track_chargedIso0p05"] = mask
 
-    mask = mask & (abs(tracks.dxy) < 0.02)
-    masks["track_dxy0p02"] = mask
-
     mask = mask & (abs(tracks.dz) < 0.5)
     masks["track_dz0p5"] = mask
 
     mask = mask & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
     masks["track_dRJet0p5"] = mask
+
+    mask = mask & (tracks.caloEnergy < 10.0)
+    masks["track_calo10"] = mask
+
+    mask = mask & (tracks.missingOuterHits >= 3)
+    masks["track_missingOuter3"] = mask
 
     mask = mask & ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
     masks["track_electronVeto"] = mask
@@ -1291,19 +1569,24 @@ def search_figure17_track_cutflow_masks(tracks, *, layer: str = "NLayers6plus"):
     mask = mask & ((tracks.dRMinTauHad < 0.0) | (tracks.dRMinTauHad > 0.15))
     masks["track_tauVeto"] = mask
 
-    mask = mask & (tracks.caloEnergy < 10.0)
-    masks["track_calo10"] = mask
+    abs_dxy = abs(tracks.dxy)
+    mask = mask & (abs_dxy >= sideband_min) & (abs_dxy < sideband_max)
+    masks["track_d0Sideband"] = mask
 
-    mask = mask & (tracks.missingOuterHits >= 3)
-    masks["track_missingOuter3"] = mask
-
-    mask = mask & layer_mask(tracks, layer)
-    masks["track_layers6plus"] = mask
+    masks["track_NLayers4"] = mask & analysis_layer_mask(tracks, "NLayers4")
+    masks["track_NLayers5"] = mask & analysis_layer_mask(tracks, "NLayers5")
+    masks["track_NLayers6plus"] = mask & analysis_layer_mask(tracks, "NLayers6plus")
+    masks["track_combinedBins"] = mask & analysis_layer_mask(tracks, "combinedBins")
 
     return masks
 
 
-def search_track_cutflow_masks(tracks, *, layer: str = "combinedBins"):
+def search_track_cutflow_masks(
+    tracks,
+    *,
+    layer: str = "combinedBins",
+    require_high_purity: bool = True,
+):
     """Return cumulative track masks for debugging the search-track selection."""
     masks = {}
     mask = tracks.pt > 55.0
@@ -1327,12 +1610,6 @@ def search_track_cutflow_masks(tracks, *, layer: str = "combinedBins"):
     mask = mask & tracks.isFiducialECALTrack
     masks["track_fiducialECAL"] = mask
 
-    mask = mask & tracks.isFiducialElectronTrack
-    masks["track_fiducialElectron"] = mask
-
-    mask = mask & tracks.isFiducialMuonTrack
-    masks["track_fiducialMuon"] = mask
-
     mask = mask & (tracks.hp_nValidPixelHits >= 4)
     masks["track_pixelHits4"] = mask
 
@@ -1357,13 +1634,12 @@ def search_track_cutflow_masks(tracks, *, layer: str = "combinedBins"):
     mask = mask & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
     masks["track_dRJet0p5"] = mask
 
-    pre_layer_mask = mask
-    masks["track_layers4"] = pre_layer_mask & layer_mask(tracks, "NLayers4")
-    masks["track_layers5"] = pre_layer_mask & layer_mask(tracks, "NLayers5")
-    masks["track_layers6plus"] = pre_layer_mask & layer_mask(tracks, "NLayers6plus")
-
-    mask = pre_layer_mask & layer_mask(tracks, layer)
+    mask = mask & layer_mask(tracks, layer)
     masks["track_layers4plus"] = mask
+
+    if require_high_purity:
+        mask = mask & tracks.isHighPurityTrack
+    masks["track_highPurity"] = mask
 
     mask = mask & (tracks.caloEnergy < 10.0)
     masks["track_calo10"] = mask
@@ -1394,28 +1670,16 @@ def search_event_cutflow_masks(
     """Return cumulative event masks for debugging the search event selection."""
     masks = {}
 
-    mask = analysis_event.passesMETTrigger
-    masks["event_metTrigger"] = mask
-
-    mask = mask & analysis_event.passesSignalMETFilters
-    masks["event_metFilters"] = mask
-
-    mask = mask & analysis_event.passEcalBadCalibFilterUpdate
-    masks["event_passEcalBadCalibFilterUpdate"] = mask
-
-    mask = mask & analysis_event.hasGoodPV
-    masks["event_goodPV"] = mask
-
-    mask = mask & (analysis_event.METNoMu_pt >= met_min)
+    mask = analysis_event.METNoMu_pt >= met_min
     masks["event_metNoMu120"] = mask
 
-    mask = mask & analysis_event.hasJetPt110
+    mask = mask & (analysis_event.leadingJet_pt > jet_pt_min)
     masks["event_leadingJet110"] = mask
 
-    mask = mask & analysis_event.hasJetPt110Eta2p4
+    mask = mask & (abs(analysis_event.leadingJet_eta) < 2.4)
     masks["event_leadingJetEta2p4"] = mask
 
-    mask = mask & analysis_event.hasJetPt110Eta2p4TightLepVeto
+    mask = mask & analysis_event.leadingJet_tightLepVeto
     masks["event_leadingJetTightLepVeto"] = mask
 
     mask = mask & (
@@ -1430,25 +1694,40 @@ def search_event_cutflow_masks(
     return masks
 
 
+def basic_event_selection_mask(
+    analysis_event,
+    *,
+    met_min: float = 120.0,
+    jet_pt_min: float = 110.0,
+    jet_met_dphi_min: float = 0.5,
+    dijet_dphi_max: float = 2.5,
+):
+    """AN-style BasicSelection event mask."""
+
+    return search_event_cutflow_masks(
+        analysis_event,
+        met_min=met_min,
+        jet_pt_min=jet_pt_min,
+        jet_met_dphi_min=jet_met_dphi_min,
+        dijet_dphi_max=dijet_dphi_max,
+    )["event_jetMetDphi0p5"]
+
+
 def add_event_derived_fields(events):
     """Build no-muon-MET/jet angular quantities without a custom event table."""
     import awkward as ak
 
-    jet_tight_lep_veto = run3_tight_lepton_veto_jet_mask(events.Jet)
-    has_jet_pt110 = ak.any(events.Jet.pt > 110.0, axis=1)
-    has_jet_pt110_eta2p4 = ak.any(
-        (events.Jet.pt > 110.0) & (abs(events.Jet.eta) < 2.4), axis=1
+    good = (
+        (events.Jet.pt > 30.0)
+        & (abs(events.Jet.eta) < 4.5)
+        & run3_tight_lepton_veto_jet_mask(events.Jet)
     )
-    has_jet_pt110_eta2p4_tight = ak.any(
-        (events.Jet.pt > 110.0) & (abs(events.Jet.eta) < 2.4) & jet_tight_lep_veto,
-        axis=1,
-    )
-
-    good = (events.Jet.pt > 30.0) & (abs(events.Jet.eta) < 2.4) & jet_tight_lep_veto
     jets = events.Jet[good]
     order = ak.argsort(jets.pt, ascending=False)
     jets = jets[order]
     leading_pt = ak.fill_none(ak.firsts(jets.pt), -1.0)
+    leading_eta = ak.fill_none(ak.firsts(jets.eta), 999.0)
+    leading_tight_lep_veto = leading_pt > 0.0
     leading_phi = ak.fill_none(ak.firsts(jets.phi), 0.0)
 
     first, second = ak.unzip(ak.combinations(jets.phi, 2, axis=1))
@@ -1459,14 +1738,9 @@ def add_event_derived_fields(events):
         {
             "METNoMu_pt": events.MetNoMu.pt,
             "METNoMu_phi": events.MetNoMu.phi,
-            "passesMETTrigger": _hlt_or_mask(events),
-            "passesSignalMETFilters": _signal_met_filters_mask(events),
-            "passEcalBadCalibFilterUpdate": _ecal_bad_calib_filter_mask(events),
-            "hasGoodPV": _good_primary_vertex_mask(events),
-            "hasJetPt110": has_jet_pt110,
-            "hasJetPt110Eta2p4": has_jet_pt110_eta2p4,
-            "hasJetPt110Eta2p4TightLepVeto": has_jet_pt110_eta2p4_tight,
             "leadingJet_pt": leading_pt,
+            "leadingJet_eta": leading_eta,
+            "leadingJet_tightLepVeto": leading_tight_lep_veto,
             "leadingJet_phi": leading_phi,
             "dijetMaxDeltaPhi": dijet_max,
             "leadingJetMETNoMuDeltaPhi": abs(

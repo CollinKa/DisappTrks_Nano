@@ -11,6 +11,10 @@ or
 
     /data/user/mjoyce/disapptrks_nano/Muon_2023C/prod/Muon0_Run2023C_v4/nano_1.root
 
+Special-test files copied from ``dev_v2`` can be selected independently with
+``--source-area dev_v2``.  Their dataset names and JSON filenames default to an
+``OSUv2`` suffix so they cannot be confused with the standard outputs.
+
 This helper scans those local files, groups them by primary dataset and Run-3
 era group, and writes the JSON files consumed by ``submit_osu_dataset.sh``.
 """
@@ -45,10 +49,16 @@ def write_osu_outputs(
     output_dir: Path,
     filelist_dir: Path | None,
     dataset_name_suffix: str,
+    output_filename_suffix: str,
     prod_version_policy: str,
     nano_version: int | None,
+    source_areas: tuple[str, ...],
 ) -> dict[str, dict[str, Path | int | str]]:
-    grouped = group_osunano_files(files, prod_version_policy=prod_version_policy)
+    grouped = group_osunano_files(
+        files,
+        prod_version_policy=prod_version_policy,
+        source_areas=source_areas,
+    )
 
     output_dir.mkdir(parents=True, exist_ok=True)
     if filelist_dir is not None:
@@ -59,7 +69,8 @@ def write_osu_outputs(
         group = ERA_GROUP_BY_LABEL[label]
         sample = f"DATA_{primary}"
         dataset_name = f"Run{label}_{primary}_OSUNano_{dataset_name_suffix}"
-        dataset_path = output_dir / f"osu_{label}_{primary}.json"
+        filename_suffix = f"_{output_filename_suffix}" if output_filename_suffix else ""
+        dataset_path = output_dir / f"osu_{label}_{primary}{filename_suffix}.json"
         dataset = build_dataset_definition(
             dataset_name=dataset_name,
             files=paths,
@@ -117,8 +128,17 @@ def main() -> int:
     )
     parser.add_argument(
         "--dataset-name-suffix",
-        default="OSU",
-        help="Suffix used in dataset names, e.g. Run2023C_Muon_OSUNano_OSU.",
+        help="Suffix used in dataset names. Defaults to OSU, or OSUv2 for dev_v2.",
+    )
+    parser.add_argument(
+        "--output-filename-suffix",
+        help="Suffix before .json. Defaults to none, or OSUv2 for dev_v2.",
+    )
+    parser.add_argument(
+        "--source-area",
+        action="append",
+        choices=("dev", "prod", "dev_v2"),
+        help="OSUNano area to include. Repeat to include multiple areas. Default: dev and prod.",
     )
     parser.add_argument(
         "--prod-version-policy",
@@ -142,13 +162,21 @@ def main() -> int:
         raise SystemExit(f"Base directory does not exist: {args.base}")
 
     files = find_root_files(args.base)
+    source_areas = tuple(args.source_area or ("dev", "prod"))
+    is_dev_v2_only = source_areas == ("dev_v2",)
+    dataset_name_suffix = args.dataset_name_suffix or ("OSUv2" if is_dev_v2_only else "OSU")
+    output_filename_suffix = args.output_filename_suffix
+    if output_filename_suffix is None:
+        output_filename_suffix = "OSUv2" if is_dev_v2_only else ""
     outputs = write_osu_outputs(
         files,
         output_dir=args.output_dir,
         filelist_dir=args.filelist_dir,
-        dataset_name_suffix=args.dataset_name_suffix,
+        dataset_name_suffix=dataset_name_suffix,
+        output_filename_suffix=output_filename_suffix,
         prod_version_policy=args.prod_version_policy,
         nano_version=args.nano_version,
+        source_areas=source_areas,
     )
 
     print(f"Scanned {len(files)} ROOT file(s) under {args.base.resolve()}")

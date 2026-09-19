@@ -1,0 +1,24 @@
+# Direct LPC Condor settings for native PocketCoffea ROOT skims.
+job-name: "z_sideband_skim"
+jobs-dir: "jobs_lpc_z_sideband_skim"
+
+scaleout: 50
+chunksize: 25000
+cores-per-worker: 1
+mem-per-worker: "6GB"
+disk-per-worker: "10GB"
+queue: "workday"
+local-virtualenv: true
+conda-env: false
+split-by-category: false
+eos-prefix: "root://cmseos.fnal.gov/"
+max-retries: 10
+retries: 10
+dry-run: false
+
+custom-setup-commands:
+  - "source /cvmfs/cms.cern.ch/cmsset_default.sh"
+  - "cd /uscms_data/d3/mjoyce/DisTrks/CMSSW_15_0_10/src"
+  - "cmsenv"
+  - "cd /uscms_data/d3/mjoyce/DisTrks/CMSSW_15_0_10/src/DisappTrks_Nano"
+  - "source .venv/bin/activate"

@@ -74,6 +74,7 @@ TAG_AND_PROBE_BRANCHES = frozenset(
         "Muon_eta",
         "Muon_phi",
         "Muon_charge",
+        "Muon_looseId",
         "Muon_tightId",
         "Muon_pfRelIso04_all",
         "HLT_IsoMu24",

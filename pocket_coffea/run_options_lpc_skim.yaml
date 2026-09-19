@@ -1,0 +1,25 @@
+# Dask fallback for native PocketCoffea ROOT skims.
+# Direct Condor is preferred upstream, but these conservative settings keep
+# each full-event export task below the normal worker memory/scratch limits.
+scaleout: 50
+chunksize: 25000
+cores-per-worker: 1
+mem-per-worker: "6GB"
+disk-per-worker: "10GB"
+queue: "workday"
+adaptive: false
+retries: 10
+tree-reduction: 8
+# Do not hide export/selection failures as "No chunks returned results". Once
+# a smoke test succeeds this can be overridden for a large production if an
+# independently known corrupt input file must be skipped.
+skip-bad-files: false
+
+dask-scheduler-port: null
+dask-scheduler-host: null
+dask-worker-start-timeout: 1800
+
+local-virtualenv: true
+conda-env: false
+worker-python: "/srv/.env/bin/python"
+custom-setup-commands: null

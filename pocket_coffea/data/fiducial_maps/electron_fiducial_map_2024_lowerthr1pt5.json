@@ -1,0 +1,61 @@
+{
+  "hot_spots": [
+    {
+      "eta": 1.3499999999999996,
+      "phi": -1.25,
+      "radius": 0.0707106781186545,
+      "sigma": 1.5624820557013206
+    },
+    {
+      "eta": 1.8500000000000003,
+      "phi": -1.35,
+      "radius": 0.07071067811865482,
+      "sigma": 41.55700570280639
+    },
+    {
+      "eta": 1.8500000000000003,
+      "phi": -1.25,
+      "radius": 0.0707106781186545,
+      "sigma": 2.359660207668534
+    },
+    {
+      "eta": 1.8500000000000003,
+      "phi": 2.35,
+      "radius": 0.07071067811865482,
+      "sigma": 6.1521743966168465
+    },
+    {
+      "eta": 1.8500000000000003,
+      "phi": 2.85,
+      "radius": 0.07071067811865482,
+      "sigma": 1.6296677424343458
+    },
+    {
+      "eta": 1.9500000000000002,
+      "phi": -1.35,
+      "radius": 0.07071067811865489,
+      "sigma": 11.171606053020396
+    },
+    {
+      "eta": 1.9500000000000002,
+      "phi": -1.25,
+      "radius": 0.07071067811865459,
+      "sigma": 2.539357735232627
+    }
+  ],
+  "mean_inefficiency": 0.022549629652519693,
+  "metadata": {
+    "after_variable": "electronFiducialAfter_eta_phi",
+    "before_variable": "electronFiducialBefore_eta_phi",
+    "category": "inclusive",
+    "dataset": null,
+    "flavor": "electron",
+    "input_files": [
+      "analysis_output/2024_fiducialmap_electron_dask/output_all.coffea"
+    ],
+    "run_period": "2024",
+    "sample": "DATA_EGamma",
+    "threshold": 1.5
+  },
+  "stddev_inefficiency": 0.021264774865331623
+}

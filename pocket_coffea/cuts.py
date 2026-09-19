@@ -12,12 +12,15 @@ from coffea.lumi_tools import LumiMask
 from pocket_coffea.lib.cut_definition import Cut
 from pocket_coffea.lib.cut_functions import apply_golden_json, get_JetVetoMap_Mask
 
+from disapptrks.triggers import ISO_MUON_REFERENCE_TRIGGER, tau_cross_trigger_for_year
+from disapptrks.selections import (
+    invariant_mass,
+    layer_mask,
+    single_electron_trigger_mask,
+)
+
 
 EVENT_DIAGNOSTIC_FIELDS = [
-    "event_metTrigger",
-    "event_metFilters",
-    "event_passEcalBadCalibFilterUpdate",
-    "event_goodPV",
     "event_metNoMu120",
     "event_leadingJet110",
     "event_leadingJetEta2p4",
@@ -26,19 +29,13 @@ EVENT_DIAGNOSTIC_FIELDS = [
     "event_jetMetDphi0p5",
 ]
 
-GEN_DIAGNOSTIC_FIELDS = [
-    "gen_lightestChargino",
-]
-
 TRACK_DIAGNOSTIC_FIELDS = [
-    "track_eta2p1",
     "track_pt55",
+    "track_eta2p1",
     "track_noECALCrack",
     "track_noDTWheelGap",
     "track_noCSCTransition",
     "track_noTOBCrack",
-    "track_fiducialElectron",
-    "track_fiducialMuon",
     "track_fiducialECAL",
     "track_pixelHits4",
     "track_validHits4",
@@ -48,27 +45,125 @@ TRACK_DIAGNOSTIC_FIELDS = [
     "track_dxy0p02",
     "track_dz0p5",
     "track_dRJet0p5",
+    "track_layers4plus",
+    "track_highPurity",
+    "track_calo10",
+    "track_missingOuter3",
     "track_electronVeto",
     "track_muonVeto",
     "track_tauVeto",
+]
+
+SIGNAL_ACCEPTANCE_PRE_LAYER_FIELDS = tuple(
+    EVENT_DIAGNOSTIC_FIELDS
+    + TRACK_DIAGNOSTIC_FIELDS[: TRACK_DIAGNOSTIC_FIELDS.index("track_layers4plus")]
+)
+SIGNAL_ACCEPTANCE_CARTESIAN_FIELDS = tuple(
+    TRACK_DIAGNOSTIC_FIELDS[
+        TRACK_DIAGNOSTIC_FIELDS.index("track_highPurity"):
+    ]
+)
+
+FAKE_TRACK_DIAGNOSTIC_FIELDS = [
+    "track_pt55",
+    "track_eta2p1",
+    "track_noECALCrack",
+    "track_noDTWheelGap",
+    "track_noCSCTransition",
+    "track_noTOBCrack",
+    "track_fiducialECAL",
+    "track_pixelHits4",
+    "track_validHits4",
+    "track_noMissingInner",
+    "track_noMissingMiddle",
+    "track_chargedIso0p05",
+    "track_dz0p5",
+    "track_dRJet0p5",
     "track_calo10",
     "track_missingOuter3",
-    "track_layers6plus",
+    "track_electronVeto",
+    "track_muonVeto",
+    "track_tauVeto",
+    "track_d0Sideband",
+    "track_NLayers4",
+    "track_NLayers5",
+    "track_NLayers6plus",
+    "track_combinedBins",
+]
+
+TAU_BACKGROUND_DIAGNOSTIC_FIELDS = [
+    "event_quality",
+    "event_cross_trigger",
+    "event_reference_muon_trigger",
+    "tau_pt50",
+    "tau_eta2p1",
+    "tau_decay_mode",
+    "tau_lepton_rejection",
+    "tau_tight_vsjet",
+    "event_jet_selection",
+    "track_pt55",
+    "track_eta2p1",
+    "track_noECALCrack",
+    "track_noDTWheelGap",
+    "track_noCSCTransition",
+    "track_noTOBCrack",
+    "track_fiducialECAL",
+    "track_pixelHits4",
+    "track_validHits4",
+    "track_noMissingInner",
+    "track_noMissingMiddle",
+    "track_chargedIso0p05",
+    "track_dxy0p02",
+    "track_dz0p5",
+    "track_tauMatch0p1",
+    "track_NLayers4",
+    "track_NLayers5",
+    "track_NLayers6plus",
+    "track_combinedBins",
+    "offline_NLayers4",
+    "offline_NLayers5",
+    "offline_NLayers6plus",
+    "offline_combinedBins",
+    "trigger_NLayers4",
+    "trigger_NLayers5",
+    "trigger_NLayers6plus",
+    "trigger_combinedBins",
+]
+
+FAKE_ZMUMU_DIAGNOSTIC_FIELDS = [
+    "event_trigger",
+    "muon_pt26",
+    "muon_eta2p1",
+    "muon_tight_id",
+    "muon_selected_tag",
+    "z_os_window",
+    "sideband_NLayers4",
+    "sideband_NLayers5",
+    "sideband_NLayers6plus",
+    "sideband_combinedBins",
+]
+
+FAKE_ZEE_DIAGNOSTIC_FIELDS = [
+    "event_trigger",
+    "electron_pt25",
+    "electron_eta2p1",
+    "electron_tight_id",
+    "electron_dxy",
+    "electron_dz",
+    "electron_pt32",
+    "z_os_window",
+    "sideband_NLayers4",
+    "sideband_NLayers5",
+    "sideband_NLayers6plus",
+    "sideband_combinedBins",
 ]
 
 COMBINED_DIAGNOSTIC_FIELDS = [
     f"eventKinematics_{field}" for field in TRACK_DIAGNOSTIC_FIELDS
 ]
-COMBINED_DIAGNOSTIC_FIELDS.insert(
-    COMBINED_DIAGNOSTIC_FIELDS.index("eventKinematics_track_electronVeto"),
-    "eventKinematics_track_jetVeto2022",
-)
 
 SEARCH_DIAGNOSTIC_FIELDS = (
-    GEN_DIAGNOSTIC_FIELDS
-    + EVENT_DIAGNOSTIC_FIELDS
-    + TRACK_DIAGNOSTIC_FIELDS
-    + COMBINED_DIAGNOSTIC_FIELDS
+    EVENT_DIAGNOSTIC_FIELDS + TRACK_DIAGNOSTIC_FIELDS + COMBINED_DIAGNOSTIC_FIELDS
 )
 
 PVETO_LAYERS = ("NLayers4", "NLayers5", "NLayers6plus")
@@ -80,7 +175,10 @@ GOLDEN_JSON_FILES = {
     "2023_postBPix": "Cert_Collisions2023_366442_370790_Golden.json",
     "2024": "Cert_Collisions2024_378981_386951_Golden.json",
     "2025": "Cert_Collisions2025_391658_398903_Golden.json",
+    "2026": "Collisions26_MLEnhancedGolden_Latest.json",
 }
+
+GOLDEN_JSON_PAYLOADS = {}
 
 JET_VETO_MAP_FILES = {
     "2022_preEE": "Run3-22CDSep23-Summer22-NanoAODv12_jetvetomaps.json.gz",
@@ -89,6 +187,10 @@ JET_VETO_MAP_FILES = {
     "2023_postBPix": "Run3-23DSep23-Summer23BPix-NanoAODv12_jetvetomaps.json.gz",
     "2024": "Run3-24CDEReprocessingFGHIPrompt-Summer24-NanoAODv15_jetvetomaps.json.gz",
     "2025": "Run3-25Prompt-Winter25-NanoAODv15_jetvetomaps.json.gz",
+}
+
+JET_VETO_MAP_FALLBACK_YEARS = {
+    "2026": ("2025",),
 }
 
 MUON_TABLE16_FIELDS = [
@@ -104,7 +206,7 @@ MUON_TABLE16_FIELDS = [
     "track_noDTWheelGap",
     "track_noECALCrack",
     "track_noCSCTransition",
-    "track_fiducialECAL",
+    "track_fiducialSelections",
     "track_dzOrLambda",
     "track_pixelHits4",
     "track_noMissingInner",
@@ -138,7 +240,7 @@ ELECTRON_PVETO_DIAGNOSTIC_FIELDS = [
     "track_noDTWheelGap",
     "track_noECALCrack",
     "track_noCSCTransition",
-    "track_fiducialECAL",
+    "track_fiducialSelections",
     "track_dzOrLambda",
     "track_pixelHits4",
     "track_noMissingInner",
@@ -158,69 +260,6 @@ ELECTRON_PVETO_DIAGNOSTIC_FIELDS = [
     "pair_pass_electron_pveto",
 ]
 
-FIGURE1_DIAGNOSTIC_FIELDS = [
-    "electron_event_singleele_trigger",
-    "electron_event_met_filters",
-    "electron_event_jet_pt_eta_tightlepveto",
-    "electron_event_dijet_dphi",
-    "electron_event_jet_veto_map",
-    "electron_tag_pt35",
-    "electron_tag_eta2p1",
-    "electron_tag_tight_id",
-    "electron_tag_dxy",
-    "electron_tag_dz",
-    "electron_tag_selected_tag",
-    "electron_tag_random",
-    "electron_track_pt55",
-    "electron_track_elecDR0p1",
-    "electron_track_matchRecoElec",
-    "electron_track_eta2p1",
-    "electron_track_noECALCrack",
-    "electron_track_noDTWheelGap",
-    "electron_track_noCSCTransition",
-    "electron_track_noTOBCrack",
-    "electron_track_fiducialElectron",
-    "electron_track_fiducialMuon",
-    "electron_track_fiducialECAL",
-    "electron_track_pixelHits4",
-    "electron_track_validHits4",
-    "electron_track_noMissingInner",
-    "electron_track_noMissingMiddle",
-    "electron_track_chargedIso0p05",
-    "electron_track_dxy0p02",
-    "electron_track_dz0p5",
-    "electron_track_dRJet0p5",
-    "electron_track_layers6plus",
-    "signal_event_metTrigger",
-    "signal_event_metFilters",
-    "signal_event_passEcalBadCalibFilterUpdate",
-    "signal_event_goodPV",
-    "signal_event_metNoMu120",
-    "signal_event_leadingJet110",
-    "signal_event_leadingJetEta2p4",
-    "signal_event_leadingJetTightLepVeto",
-    "signal_event_dijetDphi2p5",
-    "signal_event_jetMetDphi0p5",
-    "signal_track_pt55",
-    "signal_track_eta2p1",
-    "signal_track_noECALCrack",
-    "signal_track_noDTWheelGap",
-    "signal_track_noCSCTransition",
-    "signal_track_noTOBCrack",
-    "signal_track_fiducialECAL",
-    "signal_track_fiducialElectron",
-    "signal_track_fiducialMuon",
-    "signal_track_pixelHits4",
-    "signal_track_validHits4",
-    "signal_track_noMissingInner",
-    "signal_track_noMissingMiddle",
-    "signal_track_chargedIso0p05",
-    "signal_track_dxy0p02",
-    "signal_track_dz0p5",
-    "signal_track_dRJet0p5",
-    "signal_track_layers6plus",
-]
-
 TAU_PVETO_DIAGNOSTIC_FIELDS = [
     "event_trigger",
     "event_met_filters",
@@ -228,6 +267,7 @@ TAU_PVETO_DIAGNOSTIC_FIELDS = [
     "tag_pt",
     "tag_eta2p1",
     "tag_tight_id",
+    "tag_selected",
     "tag_low_mt",
     "track_pt30",
     "track_eta2p1",
@@ -255,6 +295,21 @@ TAU_PVETO_DIAGNOSTIC_FIELDS = [
 
 def _all_true(events):
     return np.ones(len(events), dtype=bool)
+
+
+def _all_false(events):
+    return np.zeros(len(events), dtype=bool)
+
+
+def _hlt_or(events, names):
+    if "HLT" not in events.fields:
+        return _all_false(events)
+
+    mask = None
+    for name in names:
+        if name in events.HLT.fields:
+            mask = events.HLT[name] if mask is None else (mask | events.HLT[name])
+    return mask if mask is not None else _all_false(events)
 
 
 def _metadata_era(events):
@@ -309,9 +364,12 @@ def _event_flags_year_key(year, events, processor_params):
     if _container_has_key(processor_params.event_flags, mapped_year):
         return mapped_year
 
-    # PocketCoffea may not yet define explicit 2025 event-flag lists.  Use the
-    # Run-3 2024 list as the closest available NanoAODv15/data-era fallback.
-    if str(year) == "2025" and _container_has_key(processor_params.event_flags, "2024"):
+    # PocketCoffea may not yet define explicit event-flag lists for newly added
+    # Run-3/Run-3-extension data-taking years.  Use the 2024 NanoAODv15/data-era
+    # list as the closest available fallback.
+    if str(year) in ("2025", "2026") and _container_has_key(
+        processor_params.event_flags, "2024"
+    ):
         return "2024"
 
     return mapped_year
@@ -319,28 +377,64 @@ def _event_flags_year_key(year, events, processor_params):
 
 def _local_golden_json_path(mapped_year):
     filename = GOLDEN_JSON_FILES.get(str(mapped_year))
-    if filename is None:
-        return None
 
     search_dirs = []
     env_dir = os.environ.get("DISAPPTRKS_GOLDEN_JSON_DIR")
     if env_dir:
         search_dirs.append(Path(env_dir))
     search_dirs.append(Path(__file__).resolve().parent / "data" / "golden_jsons")
-    search_dirs.append(Path.cwd() / "data" / "golden_jsons")
-    search_dirs.append(Path.cwd() / "golden_jsons")
+    # A distributed worker can outlive the temporary directory that was its
+    # cwd when it started.  In that case os.getcwd()/Path.cwd() raises
+    # FileNotFoundError; the module-relative and embedded-payload lookups are
+    # still valid and should be allowed to proceed.
+    try:
+        cwd = Path.cwd()
+    except OSError:
+        cwd = None
+    if cwd is not None:
+        search_dirs.append(cwd / "data" / "golden_jsons")
+        search_dirs.append(cwd / "golden_jsons")
 
     for directory in search_dirs:
-        candidate = directory / filename
-        if candidate.exists():
-            return candidate
+        candidates = []
+        if filename is not None:
+            candidates.append(directory / filename)
+        if str(mapped_year) == "2026":
+            candidates.append(directory / "Collisions26_MLEnhancedGolden_Latest.json")
+            candidates.extend(sorted(directory.glob("Collisions26*Golden*.json")))
+        candidates.extend(sorted(directory.glob(f"Cert_Collisions{mapped_year}*_Golden.json")))
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
     return None
 
 
-def _local_jet_veto_map_path(mapped_year):
-    filename = JET_VETO_MAP_FILES.get(str(mapped_year))
-    if filename is None:
+def _payload_golden_json_mask(events, mapped_year):
+    mapped_year = str(mapped_year)
+    payload = GOLDEN_JSON_PAYLOADS.get(mapped_year)
+    if payload is None:
+        # The same certification applies to both pre/post subperiods.
+        payload = GOLDEN_JSON_PAYLOADS.get(mapped_year.split("_", 1)[0])
+    if payload is None:
         return None
+
+    runs = ak.to_numpy(events.run)
+    lumis = ak.to_numpy(events.luminosityBlock)
+    mask = np.zeros(len(runs), dtype=bool)
+    for run, ranges in payload.items():
+        run_mask = runs == int(run)
+        if not np.any(run_mask):
+            continue
+        run_lumis = lumis[run_mask]
+        run_pass = np.zeros(len(run_lumis), dtype=bool)
+        for first_lumi, last_lumi in ranges:
+            run_pass |= (run_lumis >= int(first_lumi)) & (run_lumis <= int(last_lumi))
+        mask[run_mask] = run_pass
+    return ak.Array(mask)
+
+
+def _local_jet_veto_map_path(mapped_year):
+    search_years = (str(mapped_year), *JET_VETO_MAP_FALLBACK_YEARS.get(str(mapped_year), ()))
 
     search_dirs = []
     env_dir = os.environ.get("DISAPPTRKS_JET_VETO_MAP_DIR")
@@ -351,39 +445,59 @@ def _local_jet_veto_map_path(mapped_year):
     search_dirs.append(Path.cwd() / "jet_veto_maps")
 
     for directory in search_dirs:
-        candidates = [
-            directory / filename,
-            directory / str(mapped_year) / "jetvetomaps.json.gz",
-            directory / filename.removesuffix("_jetvetomaps.json.gz") / "jetvetomaps.json.gz",
-        ]
-        for candidate in candidates:
-            if candidate.exists():
-                return candidate
+        for search_year in search_years:
+            filename = JET_VETO_MAP_FILES.get(search_year)
+            candidates = [directory / search_year / "jetvetomaps.json.gz"]
+            if filename is not None:
+                candidates.extend(
+                    [
+                        directory / filename,
+                        directory
+                        / filename.removesuffix("_jetvetomaps.json.gz")
+                        / "jetvetomaps.json.gz",
+                    ]
+                )
+            candidates.extend(sorted(directory.glob(f"*{search_year}*jetvetomaps*.json.gz")))
+            candidates.extend(sorted(directory.glob(f"*{search_year[-2:]}*jetvetomaps*.json.gz")))
+            for candidate in candidates:
+                if candidate.exists():
+                    return candidate
     return None
 
 
 def _configured_jet_veto_map_path(processor_params, mapped_year):
-    try:
-        payload = processor_params.jet_scale_factors.vetomaps[str(mapped_year)]["file"]
-    except Exception:
-        return None
+    for search_year in (
+        str(mapped_year),
+        *JET_VETO_MAP_FALLBACK_YEARS.get(str(mapped_year), ()),
+    ):
+        try:
+            payload = processor_params.jet_scale_factors.vetomaps[search_year]["file"]
+        except Exception:
+            continue
+        return Path(str(payload))
 
-    return Path(str(payload))
+    return None
 
 
 def _cvmfs_jet_veto_map_path(mapped_year):
-    filename = JET_VETO_MAP_FILES.get(str(mapped_year))
-    if filename is None:
-        return None
+    for search_year in (
+        str(mapped_year),
+        *JET_VETO_MAP_FALLBACK_YEARS.get(str(mapped_year), ()),
+    ):
+        filename = JET_VETO_MAP_FILES.get(search_year)
+        if filename is None:
+            continue
 
-    period = filename.removesuffix("_jetvetomaps.json.gz")
-    return (
-        Path("/cvmfs/cms-griddata.cern.ch/cat/metadata")
-        / "JME"
-        / period
-        / "latest"
-        / "jetvetomaps.json.gz"
-    )
+        period = filename.removesuffix("_jetvetomaps.json.gz")
+        return (
+            Path("/cvmfs/cms-griddata.cern.ch/cat/metadata")
+            / "JME"
+            / period
+            / "latest"
+            / "jetvetomaps.json.gz"
+        )
+
+    return None
 
 
 def _jet_id_compute_year(processor_params, mapped_year):
@@ -394,11 +508,11 @@ def _jet_id_compute_year(processor_params, mapped_year):
     except Exception:
         pass
 
-    # PocketCoffea may not yet carry an explicit 2025 jet-ID correction key,
-    # while Run-3 2025 custom NanoAOD is still NanoAODv15.  Use the 2024 v15
-    # jet-ID correction as a compatibility fallback for the jet-ID recompute
-    # only; the jet-veto-map payload itself is still selected with mapped_year.
-    if year == "2025":
+    # PocketCoffea may not yet carry explicit jet-ID correction keys for newly
+    # added NanoAODv15 data-taking years.  Use the 2024 v15 jet-ID correction as
+    # a compatibility fallback for the jet-ID recompute only; the jet-veto-map
+    # payload itself is still selected with mapped_year.
+    if year in ("2025", "2026"):
         try:
             if "2024" in processor_params.jet_scale_factors.jet_id:
                 return "2024"
@@ -474,6 +588,9 @@ def _golden_json_lumi(events, params, year, processor_params, sample, isMC, **kw
     local_json = _local_golden_json_path(mapped_year)
     if local_json is not None:
         return LumiMask(str(local_json))(events.run, events.luminosityBlock)
+    payload_mask = _payload_golden_json_mask(events, mapped_year)
+    if payload_mask is not None:
+        return payload_mask
 
     try:
         return apply_golden_json(
@@ -579,6 +696,50 @@ def _search_diagnostic(events, params, **kwargs):
     return events.SearchDiag[params["field"]]
 
 
+def _signal_acceptance_common_cutflow(events, params, **kwargs):
+    return events.SignalAcceptanceCommon[params["field"]]
+
+
+def _signal_acceptance_track_stage(events, params, **kwargs):
+    return (
+        events.SignalAcceptanceBasicEvent
+        & events.SignalAcceptanceTrackStages[params["field"]]
+    )
+
+
+def _signal_acceptance_layer_entry(events, params, **kwargs):
+    return events.SignalAcceptanceLayerEntry[params["layer"]]
+
+
+def _signal_acceptance_layer(events, params, **kwargs):
+    return layer_mask(events.IsoTrack, params["layer"])
+
+
+def _signal_acceptance_variant(events, params, **kwargs):
+    if not params["require_high_purity"]:
+        return ak.ones_like(events.IsoTrack.pt, dtype=bool)
+    return events.IsoTrack.isHighPurityTrack
+
+
+def _high_purity_study_selection(events, params, **kwargs):
+    tracks = events.HighPurityStudyTrack
+    if params["require_high_purity"]:
+        return tracks.isHighPurityTrack
+    return ak.ones_like(tracks.pt, dtype=bool)
+
+
+def _high_purity_study_layer(events, params, **kwargs):
+    return layer_mask(events.HighPurityStudyTrack, params["layer"])
+
+
+def _fake_track_diagnostic(events, params, **kwargs):
+    return events.FakeTrackDiag[params["field"]]
+
+
+def _fake_z_control_diagnostic(events, params, **kwargs):
+    return events[params["collection"]][params["field"]]
+
+
 def _muon_table16_diagnostic(events, params, **kwargs):
     return events.MuonTable16Diag[params["field"]]
 
@@ -587,28 +748,136 @@ def _electron_pveto_diagnostic(events, params, **kwargs):
     return events.ElectronPVetoDiag[params["field"]]
 
 
-def _figure1_diagnostic(events, params, **kwargs):
-    return events.Figure1Diag[params["field"]]
-
-
 def _tau_pveto_diagnostic(events, params, **kwargs):
     return events[params["collection"]][params["field"]]
+
+
+def _tau_background_diagnostic(events, params, **kwargs):
+    return events.TauBackgroundDiag[params["field"]]
 
 
 def _search_kinematics(events, params, **kwargs):
     event = events.AnalysisEvent
     return (
-        event.passesMETTrigger
-        & event.passesSignalMETFilters
-        & event.passEcalBadCalibFilterUpdate
-        & event.hasGoodPV
-        & (event.METNoMu_pt >= params["met_min"])
-        & event.hasJetPt110
-        & event.hasJetPt110Eta2p4
-        & event.hasJetPt110Eta2p4TightLepVeto
-        & (event.leadingJetMETNoMuDeltaPhi >= params["jet_met_dphi_min"])
+        (event.METNoMu_pt >= params["met_min"])
+        & (event.leadingJet_pt > params["jet_pt_min"])
+        & (abs(event.leadingJet_eta) < params["jet_eta_max"])
+        & event.leadingJet_tightLepVeto
         & ((event.dijetMaxDeltaPhi < 0.0) | (event.dijetMaxDeltaPhi < params["dijet_dphi_max"]))
+        & (event.leadingJetMETNoMuDeltaPhi >= params["jet_met_dphi_min"])
     )
+
+
+def _single_muon_hlt(events, params, **kwargs):
+    return _hlt_or(events, params["paths"])
+
+
+def _required_hlt(events, params, **kwargs):
+    paths = tuple(params["paths"])
+    available = set(events.HLT.fields) if "HLT" in events.fields else set()
+    missing = [path for path in paths if path not in available]
+    if missing:
+        branches = ", ".join(f"HLT_{path}" for path in missing)
+        raise RuntimeError(
+            "Required HLT branch is absent from this NanoAOD: " + branches
+        )
+    return _hlt_or(events, paths)
+
+
+def _tau_cross_hlt(events, params, year, **kwargs):
+    return _required_hlt(
+        events,
+        {"paths": (tau_cross_trigger_for_year(year),)},
+    )
+
+
+def _tau_trigger_probability_hlt(events, params, year, **kwargs):
+    # Equation 7.8 is evaluated inside the cross-trigger population.  Keep all
+    # events here so the workflow can store both N_cross and
+    # N_(cross && IsoMu24), but fail loudly if either decision is unavailable.
+    available = set(events.HLT.fields) if "HLT" in events.fields else set()
+    required = (tau_cross_trigger_for_year(year), ISO_MUON_REFERENCE_TRIGGER)
+    missing = [path for path in required if path not in available]
+    if missing:
+        raise RuntimeError(
+            "Required HLT branch is absent from this NanoAOD: "
+            + ", ".join(f"HLT_{path}" for path in missing)
+        )
+    return ak.ones_like(events.event, dtype=bool)
+
+
+def _single_electron_hlt(events, params, **kwargs):
+    return _hlt_or(events, params["paths"])
+
+
+def _z_sideband_skim(events, params, **kwargs):
+    """Loose raw-Nano skim for repeated fake-sideband layer-bin studies.
+
+    The Z control matches the analysis definition.  The track leg intentionally
+    applies only kinematics, the d0 sideband, and measured-layer count; none of
+    the high-purity inputs is cut at skim time.
+    """
+
+    tracks = events.IsoTrack
+    layers = (
+        tracks.hp_trackerLayersWithMeasurement
+        if "hp_trackerLayersWithMeasurement" in tracks.fields
+        else tracks.hp_nValidTrackerHits
+    )
+    broad_track = (
+        (tracks.pt > 55.0)
+        & (abs(tracks.eta) < 2.1)
+        & (abs(tracks.dxy) >= 0.05)
+        & (abs(tracks.dxy) < 0.50)
+        & (layers >= 4)
+    )
+    has_broad_track = ak.any(broad_track, axis=1)
+
+    control = params["control"]
+    if control == "zmumu":
+        muons = events.Muon
+        # Trigger-object matching is a derived field built after the raw skim.
+        # Omitting it here is deliberately inclusive; the exact control applies
+        # matchedIsoMu24 downstream on the reduced sample.
+        selected = muons[
+            (muons.pt > 26.0)
+            & (abs(muons.eta) < 2.1)
+            & muons.tightId
+            & (muons.pfRelIso04_all < 0.15)
+        ]
+        first, second = ak.unzip(ak.combinations(selected, 2, axis=1))
+        mass = invariant_mass(first, second, first_mass=0.105658, second_mass=0.105658)
+        z_control = (
+            _hlt_or(events, ("IsoMu24",))
+            & (ak.num(selected) >= 2)
+            & ak.any((first.charge * second.charge < 0) & (abs(mass - 91.1876) < 10.0), axis=1)
+        )
+    elif control == "zee":
+        electrons = events.Electron
+        abs_sc_eta = abs(electrons.eta + electrons.deltaEtaSC)
+        barrel = abs_sc_eta <= 1.479
+        dxy_ok = (barrel & (abs(electrons.dxy) < 0.05)) | (~barrel & (abs(electrons.dxy) < 0.10))
+        dz_ok = (barrel & (abs(electrons.dz) < 0.10)) | (~barrel & (abs(electrons.dz) < 0.20))
+        trigger_match = electrons.matchedSingleElectron if "matchedSingleElectron" in electrons.fields else True
+        selected = electrons[
+            (electrons.pt > 25.0) & (abs(electrons.eta) < 2.1)
+            & (electrons.cutBased >= 4) & dxy_ok & dz_ok & trigger_match
+        ]
+        first, second = ak.unzip(ak.combinations(selected, 2, axis=1))
+        mass = invariant_mass(first, second, first_mass=0.000511, second_mass=0.000511)
+        z_control = (
+            single_electron_trigger_mask(events)
+            & (ak.num(selected) >= 2)
+            & ak.any(selected.pt > 32.0, axis=1)
+            & ak.any((first.charge * second.charge < 0) & (abs(mass - 91.1876) < 10.0), axis=1)
+        )
+    else:
+        raise ValueError(f"unknown Z-sideband skim control: {control}")
+    return z_control & has_broad_track
+
+
+def _met_hlt(events, params, **kwargs):
+    return _hlt_or(events, params["paths"])
 
 
 has_disappearing_track = Cut(
@@ -617,15 +886,98 @@ has_disappearing_track = Cut(
     function=_has_disappearing_track,
 )
 
-# The same requirement restricted to one tracker-layer signal-region bin. The
-# three bins are exclusive and together reproduce has_disappearing_track.
-search_layer_cuts = {
-    f"search_layers{suffix}": Cut(
-        name=f"has_disappearing_track_layers{suffix}",
-        params={"field": f"nIsoTrackSearchNLayers{suffix}", "minimum": 1},
+has_high_purity_disappearing_track = Cut(
+    name="has_high_purity_disappearing_track",
+    params={"field": "nIsoTrackSearchHighPurity", "minimum": 1},
+    function=_has_count,
+)
+
+signal_acceptance_layer_cuts = {}
+for _layer in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins"):
+    signal_acceptance_layer_cuts[
+        f"signal_selection_without_high_purity_{_layer}"
+    ] = Cut(
+        name=f"has_signal_track_without_high_purity_{_layer}",
+        params={"field": f"nIsoTrackSearchNoHighPurity_{_layer}", "minimum": 1},
         function=_has_count,
     )
-    for suffix in ("4", "5", "6plus")
+    signal_acceptance_layer_cuts[
+        f"signal_selection_with_high_purity_{_layer}"
+    ] = Cut(
+        name=f"has_signal_track_with_high_purity_{_layer}",
+        params={"field": f"nIsoTrackSearch_{_layer}", "minimum": 1},
+        function=_has_count,
+    )
+
+signal_acceptance_common_cutflow_cuts = {}
+for _field in SIGNAL_ACCEPTANCE_PRE_LAYER_FIELDS:
+    _name = f"signal_cutflow_common_{_field}"
+    signal_acceptance_common_cutflow_cuts[_name] = Cut(
+        name=_name,
+        params={"field": _field},
+        function=_signal_acceptance_common_cutflow,
+    )
+
+signal_acceptance_layer_entry_cuts = {}
+for _layer in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins"):
+    _name = f"signal_cutflow_layer_{_layer}_track_layers4plus"
+    signal_acceptance_layer_entry_cuts[_name] = Cut(
+        name=_name,
+        params={"layer": _layer},
+        function=_signal_acceptance_layer_entry,
+    )
+
+signal_acceptance_stage_cuts = [
+    Cut(
+        name=f"signal_stage_{_field}",
+        params={"field": _field},
+        function=_signal_acceptance_track_stage,
+        collection="IsoTrack",
+    )
+    for _field in SIGNAL_ACCEPTANCE_CARTESIAN_FIELDS
+]
+signal_acceptance_layer_axis_cuts = [
+    Cut(
+        name=f"signal_layer_{_layer}",
+        params={"layer": _layer},
+        function=_signal_acceptance_layer,
+        collection="IsoTrack",
+    )
+    for _layer in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins")
+]
+signal_acceptance_variant_axis_cuts = [
+    Cut(
+        name=f"signal_variant_{_variant}",
+        params={"require_high_purity": _require_high_purity},
+        function=_signal_acceptance_variant,
+        collection="IsoTrack",
+    )
+    for _variant, _require_high_purity in (
+        ("without_high_purity", False),
+        ("with_high_purity", True),
+    )
+]
+
+high_purity_study_selection_axis_cuts = [
+    Cut(
+        name=f"high_purity_study_{_selection}",
+        params={"require_high_purity": _require_high_purity},
+        function=_high_purity_study_selection,
+        collection="HighPurityStudyTrack",
+    )
+    for _selection, _require_high_purity in (
+        ("before", False),
+        ("pass", True),
+    )
+]
+high_purity_study_layer_axis_cuts = {
+    _layer: Cut(
+        name=f"high_purity_study_layer_{_layer}",
+        params={"layer": _layer},
+        function=_high_purity_study_layer,
+        collection="HighPurityStudyTrack",
+    )
+    for _layer in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins")
 }
 
 golden_json_lumi = Cut(
@@ -644,6 +996,71 @@ jet_veto_map = Cut(
     name="jet_veto_map",
     params={},
     function=_jet_veto_map,
+)
+
+single_muon_hlt = Cut(
+    name="single_muon_hlt",
+    params={"paths": ("IsoMu24",)},
+    function=_single_muon_hlt,
+)
+
+muon_tau_hlt = Cut(
+    name="muon_tau_hlt",
+    params={},
+    function=_tau_cross_hlt,
+)
+
+tau_trigger_probability_hlt = Cut(
+    name="tau_trigger_probability_hlt",
+    params={},
+    function=_tau_trigger_probability_hlt,
+)
+
+single_electron_hlt = Cut(
+    name="single_electron_hlt",
+    params={
+        "paths": (
+            "Ele32_WPTight_Gsf",
+            "Ele32_WPTight_Gsf_L1DoubleEG",
+            "Ele32_WPTight_Gsf_DoubleL1EG",
+        )
+    },
+    function=_single_electron_hlt,
+)
+
+z_sideband_skim_cuts = {
+    control: Cut(
+        name=f"{control}_combined_layer_sideband_skim",
+        params={"control": control},
+        function=_z_sideband_skim,
+    )
+    for control in ("zmumu", "zee")
+}
+
+met_hlt = Cut(
+    name="met_hlt",
+    params={
+        "paths": (
+            "MET105_IsoTrk50",
+            "MET120_IsoTrk50",
+            "PFMET105_IsoTrk50",
+            "PFMET120_PFMHT120_IDTight",
+            "PFMET130_PFMHT130_IDTight",
+            "PFMET140_PFMHT140_IDTight",
+            "PFMET120_PFMHT120_IDTight_PFHT60",
+            "PFMETNoMu110_PFMHTNoMu110_IDTight_FilterHF",
+            "PFMETNoMu120_PFMHTNoMu120_IDTight_FilterHF",
+            "PFMETNoMu130_PFMHTNoMu130_IDTight_FilterHF",
+            "PFMETNoMu140_PFMHTNoMu140_IDTight_FilterHF",
+            "PFMETNoMu120_PFMHTNoMu120_IDTight_PFHT60",
+            "PFMETNoMu120_PFMHTNoMu120_IDTight",
+            "PFMETNoMu130_PFMHTNoMu130_IDTight",
+            "PFMETNoMu140_PFMHTNoMu140_IDTight",
+            "PFMET250_HBHECleaned",
+            "PFMET300_HBHECleaned",
+        )
+    },
+    function=_met_hlt,
 )
 
 has_muon_tag = Cut(
@@ -767,17 +1184,6 @@ def _make_count_cut(name, field):
         function=_has_count,
     )
 
-
-figure1_cuts = {
-    "figure1_electron_control": _make_count_cut(
-        "figure1_electron_control",
-        "nIsoTrackFigure1Electron",
-    ),
-    "figure1_signal": _make_count_cut(
-        "figure1_signal",
-        "nIsoTrackFigure1Signal",
-    ),
-}
 
 lepton_pveto_cuts = {
     "electron_veto_tag": _make_count_cut("electron_veto_tag", "nElectronTag"),
@@ -911,16 +1317,72 @@ for layer in PVETO_LAYERS:
             )
         )
 
+lepton_background_cuts = {}
+for layer in (*PVETO_LAYERS, "combinedBins"):
+    for category_prefix, field_prefix in (
+        ("muon", "Muon"),
+        ("electron", "Electron"),
+        ("tau_control", "Tau"),
+        ("tau_mu", "TauMu"),
+        ("tau_ele", "TauEle"),
+    ):
+        lepton_background_cuts[f"{category_prefix}_background_control_{layer}"] = (
+            _make_count_cut(
+                f"{category_prefix}_background_control_{layer}",
+                f"n{field_prefix}BackgroundControl_{layer}",
+            )
+        )
+        lepton_background_cuts[f"{category_prefix}_background_offline_{layer}"] = (
+            _make_count_cut(
+                f"{category_prefix}_background_offline_{layer}",
+                f"n{field_prefix}BackgroundOffline_{layer}",
+            )
+        )
+        lepton_background_cuts[f"{category_prefix}_background_trigger_{layer}"] = (
+            _make_count_cut(
+                f"{category_prefix}_background_trigger_{layer}",
+                f"n{field_prefix}BackgroundTrigger_{layer}",
+            )
+        )
+
 search_kinematics = Cut(
     name="search_kinematics",
     params={
         "met_min": 120.0,
         "jet_pt_min": 110.0,
+        "jet_eta_max": 2.4,
         "jet_met_dphi_min": 0.5,
         "dijet_dphi_max": 2.5,
     },
     function=_search_kinematics,
 )
+
+# Defining the basic selection from the AN. The MET triggers are applied
+# as preselections which is why they do not show up here.
+basic_event_selection = Cut(
+    name="basic_event_selection",
+    params={
+        "met_min": 120.0,
+        "jet_pt_min": 110.0,
+        "jet_eta_max": 2.4,
+        "dijet_dphi_max": 2.5,
+        "jet_met_dphi_min": 0.5,
+    },
+    function=_search_kinematics,
+)
+
+basic_selection = basic_event_selection
+isolated_track_selection = Cut(
+    name="isolated_track_selection",
+    params={"field": "nIsoTrackIsolated", "minimum": 1},
+    function=_has_count,
+)
+candidate_track_selection = Cut(
+    name="candidate_track_selection",
+    params={"field": "nIsoTrackCandidate", "minimum": 1},
+    function=_has_count,
+)
+disappearing_track_selection = has_disappearing_track
 
 search_diagnostic_cuts = {
     field: Cut(
@@ -929,6 +1391,37 @@ search_diagnostic_cuts = {
         function=_search_diagnostic,
     )
     for field in SEARCH_DIAGNOSTIC_FIELDS
+}
+
+tau_background_diagnostic_cuts = {
+    field: Cut(
+        name=f"tau_background_diag_{field}",
+        params={"field": field},
+        function=_tau_background_diagnostic,
+    )
+    for field in TAU_BACKGROUND_DIAGNOSTIC_FIELDS
+}
+
+fake_track_diagnostic_cuts = {
+    field: Cut(
+        name=f"fake_track_diag_{field}",
+        params={"field": field},
+        function=_fake_track_diagnostic,
+    )
+    for field in FAKE_TRACK_DIAGNOSTIC_FIELDS
+}
+
+fake_z_control_diagnostic_cuts = {
+    f"{mode}_{field}": Cut(
+        name=f"fake_{mode}_diag_{field}",
+        params={"collection": collection, "field": field},
+        function=_fake_z_control_diagnostic,
+    )
+    for mode, collection, fields in (
+        ("zmumu", "FakeZMuMuDiag", FAKE_ZMUMU_DIAGNOSTIC_FIELDS),
+        ("zee", "FakeZeeDiag", FAKE_ZEE_DIAGNOSTIC_FIELDS),
+    )
+    for field in fields
 }
 
 muon_table16_cuts = {
@@ -947,15 +1440,6 @@ electron_pveto_diagnostic_cuts = {
         function=_electron_pveto_diagnostic,
     )
     for field in ELECTRON_PVETO_DIAGNOSTIC_FIELDS
-}
-
-figure1_diagnostic_cuts = {
-    field: Cut(
-        name=f"figure1_diag_{field}",
-        params={"field": field},
-        function=_figure1_diagnostic,
-    )
-    for field in FIGURE1_DIAGNOSTIC_FIELDS
 }
 
 tau_pveto_diagnostic_cuts = {
